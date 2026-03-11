@@ -59,7 +59,10 @@ canvas{display:block;position:fixed;inset:0;width:100%!important;height:100%!imp
 #stg{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
   display:flex;gap:5px;background:rgba(6,0,14,.8);
   border:1px solid rgba(255,50,80,.2);border-radius:30px;padding:7px 14px;
-  pointer-events:all;backdrop-filter:blur(12px)}
+  pointer-events:all;backdrop-filter:blur(12px);
+  max-width:calc(100vw - 20px);overflow-x:auto;white-space:nowrap;
+  scrollbar-width:none;}
+#stg::-webkit-scrollbar{display:none}
 .sb{padding:6px 13px;background:transparent;border:1px solid rgba(255,50,80,.15);
   border-radius:20px;color:rgba(240,192,208,.45);font-family:'Share Tech Mono',monospace;
   font-size:8px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all .22s}
@@ -163,6 +166,10 @@ canvas{display:block;position:fixed;inset:0;width:100%!important;height:100%!imp
     <button class="sb" onclick="goStage(2)">③ Docking</button>
     <button class="sb" onclick="goStage(3)">④ Ring Opens</button>
     <button class="sb" onclick="goStage(4)">⑤ Acyl Bond</button>
+    <button class="sb" onclick="goStage(5)">⑥ PBP Blocked</button>
+    <button class="sb" onclick="goStage(6)">⑦ Wall Breaks</button>
+    <button class="sb" onclick="goStage(7)">⑧ Lysis</button>
+    <button class="sb" onclick="goStage(8)">⑨ Cell Death</button>
   </div>
   <div id="vrdebug"></div>
   <button id="vr-btn" onclick="enterVR()">🥽 Enter VR</button>
@@ -412,14 +419,22 @@ for(var ci=0; ci<2; ci++){
       }
 
       if(vrMenuVisible){
-        // ── Grab handle — start dragging menu ────────────────────────────
+        // ── Grab handle — parent menu to controller for instant zero-lag drag ──
         var grabHits = ray.intersectObject(vrMenu.grabHit, true);
         if(grabHits.length){
           vrMenuDrag.active = true;
           vrMenuDrag.ctrlIdx = i;
-          // offset = menu world pos - controller world pos (both in world space)
-          var ctrlWP = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
-          vrMenuDrag.offset.copy(vrMenu.mesh.position).sub(ctrlWP);
+          // Reparent: move menu from scene into controller local space
+          var menuWorldPos = vrMenu.mesh.position.clone();
+          var menuWorldQuat = vrMenu.mesh.quaternion.clone();
+          ctrl.add(vrMenu.mesh);
+          ctrl.add(vrMenuToggleMesh);
+          // Convert world position to controller local position
+          ctrl.worldToLocal(menuWorldPos);
+          vrMenu.mesh.position.copy(menuWorldPos);
+          // Store the vertical offset for toggle button
+          vrMenuDrag.toggleOffset = vrMenu.MH/2 + 0.16;
+          vrMenuToggleMesh.position.copy(menuWorldPos).y += vrMenuDrag.toggleOffset;
           return;
         }
 
@@ -456,33 +471,52 @@ for(var ci=0; ci<2; ci++){
         vrPanel.mesh.lookAt(camera.getWorldPosition(new THREE.Vector3()));
         vrPanel.mesh.visible = true;
 
-        // Large VR highlight: expand emissive + outer glow sphere
-        obj.material.emissiveIntensity = 4.0;
-        var prevScale = obj.scale.x;
+        // Cancel any existing highlight on this atom before starting a new one
+        if(obj.userData._hlTimer){ clearTimeout(obj.userData._hlTimer); obj.userData._hlTimer=null; }
+        // Remove any existing glow sphere on this atom
+        if(obj.userData._glowSphere){ scene.remove(obj.userData._glowSphere); obj.userData._glowSphere=null; }
+        // Always restore to true original scale (stored once at build time, never overwritten)
+        var origScale = obj.userData.origScale || 1.0;
         obj.scale.setScalar(2.8);
-        // Outer glow ring around the atom
+        obj.material.emissiveIntensity = 4.0;
         var glowSphere = new THREE.Mesh(
-          new THREE.SphereGeometry((obj.geometry.parameters.radius||0.5)*2.8, 16, 12),
+          new THREE.SphereGeometry((obj.geometry.parameters.radius||0.5)*3.2, 16, 12),
           new THREE.MeshBasicMaterial({color:0xffcc44, transparent:true, opacity:0.35, side:THREE.BackSide})
         );
         glowSphere.position.copy(obj.getWorldPosition(new THREE.Vector3()));
         scene.add(glowSphere);
-        setTimeout(function(){
+        obj.userData._glowSphere = glowSphere;
+        obj.userData._hlTimer = setTimeout(function(){
+          obj.scale.setScalar(origScale);
           obj.material.emissiveIntensity = obj.userData.origEmi||0.3;
-          obj.scale.setScalar(prevScale);
           scene.remove(glowSphere);
           glowSphere.geometry.dispose(); glowSphere.material.dispose();
-        }, 1200);
+          obj.userData._glowSphere = null;
+          obj.userData._hlTimer = null;
+        }, 1400);
       } else {
         vrPanel.mesh.visible = false;
       }
     });
 
-    // Release menu drag on trigger up
+    // Release menu drag: reparent back to scene, preserving world position
     ctrl.addEventListener('selectend', function(){
       if(vrMenuDrag.active && vrMenuDrag.ctrlIdx === i){
         vrMenuDrag.active = false;
         vrMenuDrag.ctrlIdx = -1;
+        // Get world positions before removing from controller
+        var menuWP = new THREE.Vector3();
+        var toggleWP = new THREE.Vector3();
+        vrMenu.mesh.getWorldPosition(menuWP);
+        vrMenuToggleMesh.getWorldPosition(toggleWP);
+        // Reparent back to scene
+        scene.add(vrMenu.mesh);
+        scene.add(vrMenuToggleMesh);
+        vrMenu.mesh.position.copy(menuWP);
+        vrMenuToggleMesh.position.copy(toggleWP);
+        // Reset local rotation (billboarding will handle facing)
+        vrMenu.mesh.rotation.set(0,0,0);
+        vrMenuToggleMesh.rotation.set(0,0,0);
       }
     });
     // GRIP held: rotate molecule by moving hand
@@ -614,7 +648,7 @@ PEN_ATOMS.forEach(at=>{
   });
   const mesh = new THREE.Mesh(geo,mat);
   mesh.position.set(at.x,at.y,at.z);
-  mesh.userData = {idx:at.i, sym:at.s, isBeta, origEmi:emi,
+  mesh.userData = {idx:at.i, sym:at.s, isBeta, origEmi:emi, origScale:1.0,
     lbl: isBeta ? `${at.s}${at.i+1} — β-Lactam / Thiazolidine core` :
          at.s==='S' ? 'S1 — Thiazolidine sulfur (bicyclic core)' :
          at.s==='O' ? `O${at.i+1} — ${at.i===1?'Amide C=O':at.i===2||at.i===3?'Carboxylate O⁻':at.i===4?'β-Lactam C=O (reactive)':'Ester O'}` :
@@ -693,7 +727,7 @@ function makeLbl(txt,pos){
 });
 
 // ═══════════════════════════ PBP-2X PROTEIN (from 1PMD) ════════════════════
-const pbpGroup=new THREE.Group(); pbpGroup.visible=false; pbpGroup.position.x=14; sceneGroup.add(pbpGroup);
+const pbpGroup=new THREE.Group(); pbpGroup.visible=false; pbpGroup.position.x=18; sceneGroup.add(pbpGroup);
 
 // Render CA trace as smooth ribbon tube — built around local origin (pbpGroup.position handles world X)
 const pbpPts = PBP_CA.map(p=>new THREE.Vector3(p[0],p[1]+1,p[2]+2));
@@ -773,29 +807,282 @@ function rebuildHBonds(pbpOffsetX){
   dashedLine([a3.x,a3.y,a3.z], thr,  0x00ff88);
   dashedLine([a7.x,a7.y,a7.z], ser,  0xffaa00);
 }
-rebuildHBonds(14);
+rebuildHBonds(18);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GRAM-POSITIVE BACTERIUM + CELL WALL + LYSIS  (stages 5–8)
+// Based on actual gram-positive ultrastructure: thick PGN shell, plasma
+// membrane, cytoplasm, nucleoid, ribosomes.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const BACT_POS = new THREE.Vector3(8, 0, 3); // world centre of bacterium
+
+// ── Master bacterium group ────────────────────────────────────────────────
+const bacteriaGroup = new THREE.Group();
+bacteriaGroup.position.copy(BACT_POS);
+bacteriaGroup.rotation.z = 0.22;
+bacteriaGroup.visible = false;
+scene.add(bacteriaGroup);
+
+// Shared refs for animation
+const bactRefs = {}; // { pgn, membrane, cytoplasm, nucleoid, ribosomes[], pgn_strands[], pgn_nodes[] }
+
+(function buildBacterium(){
+  const R = 2.0; // outer radius of PGN shell
+  const HL = 3.0; // half-length of rod
+
+  // ── 1. Thick peptidoglycan shell (gram-positive = 20–80nm, ~30% of cell) ─
+  //    Rendered as a semi-transparent chunky shell with a hexagonal surface lattice
+  const pgnShellMat = new THREE.MeshStandardMaterial({
+    color:0x88ffbb, emissive:0x22aa55, emissiveIntensity:0.55,
+    roughness:0.45, metalness:0.08, transparent:true, opacity:0.38,
+    side:THREE.DoubleSide
+  });
+  // Outer envelope (slightly oversized capsule shape via sphere + cylinder)
+  const pgnBody = new THREE.Mesh(new THREE.CylinderGeometry(R,R,HL*2,40,1,true), pgnShellMat.clone());
+  const pgnCapT = new THREE.Mesh(new THREE.SphereGeometry(R,40,20,0,Math.PI*2,0,Math.PI/2), pgnShellMat.clone());
+  pgnCapT.position.y = HL;
+  const pgnCapB = new THREE.Mesh(new THREE.SphereGeometry(R,40,20,0,Math.PI*2,Math.PI/2,Math.PI/2), pgnShellMat.clone());
+  pgnCapB.position.y = -HL;
+  bactRefs.pgnMats = [pgnShellMat, pgnBody.material, pgnCapT.material, pgnCapB.material];
+  bacteriaGroup.add(pgnBody, pgnCapT, pgnCapB);
+
+  // ── 2. Peptidoglycan lattice pattern (NAG–NAM glycan strands + peptide bridges) ─
+  //    Helical glycan strands running along the rod axis, peptide bridge rungs crossing them
+  bactRefs.pgn_strands = [];
+  bactRefs.pgn_nodes = [];
+  const strandMat = new THREE.MeshStandardMaterial({
+    color:0x44ffaa, emissive:0x22cc66, emissiveIntensity:0.9,
+    roughness:0.3, metalness:0.1, transparent:true, opacity:0.85
+  });
+  const nodeMat = new THREE.MeshStandardMaterial({
+    color:0xaaffcc, emissive:0x55ff99, emissiveIntensity:1.1,
+    roughness:0.2
+  });
+  const bridgeMat = new THREE.MeshStandardMaterial({
+    color:0xffee88, emissive:0xffaa22, emissiveIntensity:0.8,
+    roughness:0.4, transparent:true, opacity:0.75
+  });
+  const HELICES=8, TURNS=4, PTS_PER=40;
+  const helixR = R * 0.96;
+  for(let h=0;h<HELICES;h++){
+    const phOff = (h/HELICES)*Math.PI*2;
+    const pts=[];
+    for(let i=0;i<=PTS_PER;i++){
+      const t=(i/PTS_PER)*TURNS*Math.PI*2;
+      const y=(i/PTS_PER)*HL*2-HL;
+      pts.push(new THREE.Vector3(helixR*Math.cos(t*0.18+phOff), y, helixR*Math.sin(t*0.18+phOff)));
+    }
+    // Convert helix to tube segments
+    for(let i=0;i<pts.length-1;i++){
+      const a=pts[i], b=pts[i+1];
+      const dir=b.clone().sub(a), len=dir.length();
+      if(len<0.01) continue;
+      const cg=new THREE.CylinderGeometry(0.055,0.055,len,7);
+      const cm=new THREE.Mesh(cg,strandMat.clone());
+      cm.position.copy(a).addScaledVector(dir.normalize(),len/2);
+      cm.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+      cm.userData.origPos=cm.position.clone(); cm.userData.origQuat=cm.quaternion.clone();
+      bactRefs.pgn_strands.push(cm); bacteriaGroup.add(cm);
+    }
+    // Nodes (NAM residues) along the helix
+    for(let i=0;i<pts.length;i+=5){
+      const nm=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),nodeMat.clone());
+      nm.position.copy(pts[i]);
+      nm.userData.origPos=nm.position.clone();
+      bactRefs.pgn_nodes.push(nm); bacteriaGroup.add(nm);
+    }
+    // Peptide bridges between adjacent helices
+    if(h<HELICES-1){
+      for(let i=2;i<PTS_PER-2;i+=6){
+        const t=(i/PTS_PER)*TURNS*Math.PI*2;
+        const y=(i/PTS_PER)*HL*2-HL;
+        const ph2=((h+1)/HELICES)*Math.PI*2;
+        const pA=new THREE.Vector3(helixR*Math.cos(t*0.18+phOff),y,helixR*Math.sin(t*0.18+phOff));
+        const pB=new THREE.Vector3(helixR*Math.cos(t*0.18+ph2),y,helixR*Math.sin(t*0.18+ph2));
+        const dir2=pB.clone().sub(pA), len2=dir2.length();
+        if(len2<0.5||len2>3.5) continue;
+        const bg=new THREE.CylinderGeometry(0.04,0.04,len2,6);
+        const bm=new THREE.Mesh(bg,bridgeMat.clone());
+        bm.position.copy(pA).addScaledVector(dir2.clone().normalize(),len2/2);
+        bm.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir2.normalize());
+        bm.userData.origPos=bm.position.clone(); bm.userData.isBridge=true;
+        bactRefs.pgn_strands.push(bm); bacteriaGroup.add(bm);
+      }
+    }
+  }
+
+  // ── 3. Plasma membrane (just inside PGN shell) ────────────────────────────
+  const memR = R * 0.82;
+  const memMat = new THREE.MeshStandardMaterial({
+    color:0x2266ff, emissive:0x1133aa, emissiveIntensity:0.55,
+    roughness:0.6, metalness:0.05, transparent:true, opacity:0.5,
+    side:THREE.DoubleSide
+  });
+  const memBody=new THREE.Mesh(new THREE.CylinderGeometry(memR,memR,HL*2,40,1,true),memMat.clone());
+  const memCapT=new THREE.Mesh(new THREE.SphereGeometry(memR,40,20,0,Math.PI*2,0,Math.PI/2),memMat.clone()); memCapT.position.y=HL;
+  const memCapB=new THREE.Mesh(new THREE.SphereGeometry(memR,40,20,0,Math.PI*2,Math.PI/2,Math.PI/2),memMat.clone()); memCapB.position.y=-HL;
+  bactRefs.membraneMats=[memMat,memBody.material,memCapT.material,memCapB.material];
+  bactRefs.membraneR=memR;
+  bactRefs.memBodyMesh=memBody;
+  bacteriaGroup.add(memBody,memCapT,memCapB);
+
+  // ── 4. Cytoplasm (filled interior glow) ───────────────────────────────────
+  const cytoR = memR * 0.96;
+  const cytoMat = new THREE.MeshStandardMaterial({
+    color:0x88ddff, emissive:0x2266aa, emissiveIntensity:0.38,
+    roughness:0.95, transparent:true, opacity:0.22, side:THREE.BackSide
+  });
+  const cytoBody=new THREE.Mesh(new THREE.CylinderGeometry(cytoR,cytoR,HL*1.95,32),cytoMat.clone());
+  const cytoCapT=new THREE.Mesh(new THREE.SphereGeometry(cytoR,32,16,0,Math.PI*2,0,Math.PI/2),cytoMat.clone()); cytoCapT.position.y=HL*0.975;
+  const cytoCapB=new THREE.Mesh(new THREE.SphereGeometry(cytoR,32,16,0,Math.PI*2,Math.PI/2,Math.PI/2),cytoMat.clone()); cytoCapB.position.y=-HL*0.975;
+  bactRefs.cytoMats=[cytoMat,cytoBody.material,cytoCapT.material,cytoCapB.material];
+  bacteriaGroup.add(cytoBody,cytoCapT,cytoCapB);
+
+  // ── 5. Nucleoid (bacterial chromosome — irregular blob in centre) ──────────
+  const nucleoidMat = new THREE.MeshStandardMaterial({
+    color:0xff8833, emissive:0xff5500, emissiveIntensity:0.9,
+    roughness:0.7, transparent:true, opacity:0.55
+  });
+  const nucleoid=new THREE.Mesh(new THREE.SphereGeometry(0.85,18,14),nucleoidMat);
+  nucleoid.scale.set(1,1.8,0.9); // elongated like real nucleoid
+  bactRefs.nucleoidMat=nucleoidMat;
+  bacteriaGroup.add(nucleoid);
+
+  // ── 6. Ribosomes (70S — tiny bright spheres filling cytoplasm) ────────────
+  bactRefs.ribosomes=[];
+  const riboMat=new THREE.MeshStandardMaterial({color:0xffdd44,emissive:0xffaa00,emissiveIntensity:0.9,roughness:0.4});
+  for(let i=0;i<55;i++){
+    const a=Math.random()*Math.PI*2, el=(Math.random()-0.5)*Math.PI;
+    const r2=0.3+Math.random()*(cytoR*0.75);
+    const rm=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,6),riboMat.clone());
+    rm.position.set(r2*Math.cos(el)*Math.cos(a),(r2*Math.sin(el))*HL*0.6,r2*Math.cos(el)*Math.sin(a));
+    rm.userData.origPos=rm.position.clone();
+    bactRefs.ribosomes.push(rm); bacteriaGroup.add(rm);
+  }
+})();
+
+// ── Burst / lysis debris (pre-built, activated on stage 8) ────────────────
+// Membrane ribbon fragments
+const burstGroup = new THREE.Group(); burstGroup.visible=false; scene.add(burstGroup);
+const burstPieces = []; // {mesh, vel, spin}
+(function buildBurst(){
+  // Membrane ribbons (curved strips)
+  const memFragMat = new THREE.MeshStandardMaterial({color:0x3399ff,emissive:0x1155cc,emissiveIntensity:0.8,roughness:0.5,transparent:true,opacity:0.85,side:THREE.DoubleSide});
+  for(let i=0;i<18;i++){
+    const w=0.35+Math.random()*0.9, h=0.2+Math.random()*0.6;
+    const g=new THREE.PlaneGeometry(w,h,4,2);
+    // Randomly warp vertices for torn look
+    const pos=g.attributes.position;
+    for(let v=0;v<pos.count;v++) pos.setZ(v,(Math.random()-0.5)*0.15);
+    g.computeVertexNormals();
+    const m=new THREE.Mesh(g,memFragMat.clone());
+    const ang=Math.random()*Math.PI*2, elev=(Math.random()-0.5)*Math.PI;
+    const spd=0.06+Math.random()*0.14;
+    m.userData.vel=new THREE.Vector3(Math.cos(elev)*Math.cos(ang),Math.sin(elev),Math.cos(elev)*Math.sin(ang)).multiplyScalar(spd);
+    m.userData.spin=new THREE.Vector3((Math.random()-0.5)*0.08,(Math.random()-0.5)*0.08,(Math.random()-0.5)*0.08);
+    burstPieces.push(m); burstGroup.add(m);
+  }
+  // PGN wall shards (greenish opaque chips)
+  const pgnFragMat = new THREE.MeshStandardMaterial({color:0x44ffaa,emissive:0x22cc66,emissiveIntensity:0.7,roughness:0.6,transparent:true,opacity:0.9});
+  for(let i=0;i<20;i++){
+    const g=new THREE.BoxGeometry(0.2+Math.random()*0.55, 0.1+Math.random()*0.35, 0.05+Math.random()*0.12);
+    const m=new THREE.Mesh(g,pgnFragMat.clone());
+    const ang=Math.random()*Math.PI*2, elev=(Math.random()-0.5)*Math.PI;
+    const spd=0.04+Math.random()*0.10;
+    m.userData.vel=new THREE.Vector3(Math.cos(elev)*Math.cos(ang),Math.sin(elev),Math.cos(elev)*Math.sin(ang)).multiplyScalar(spd);
+    m.userData.spin=new THREE.Vector3((Math.random()-0.5)*0.07,(Math.random()-0.5)*0.07,(Math.random()-0.5)*0.07);
+    burstPieces.push(m); burstGroup.add(m);
+  }
+  // DNA strands (coiled line ribbons — orange)
+  const dnaMat=new THREE.MeshStandardMaterial({color:0xff9933,emissive:0xff6600,emissiveIntensity:1.0,roughness:0.4,transparent:true,opacity:0.9});
+  for(let i=0;i<8;i++){
+    const pts=[];
+    for(let j=0;j<=18;j++) pts.push(new THREE.Vector3(Math.sin(j*0.5)*(0.15+Math.random()*0.1),j*0.12-1.1,Math.cos(j*0.5)*0.15));
+    const curve=new THREE.CatmullRomCurve3(pts);
+    const g=new THREE.TubeGeometry(curve,18,0.035,6,false);
+    const m=new THREE.Mesh(g,dnaMat.clone());
+    const ang=Math.random()*Math.PI*2, elev=(Math.random()-0.4)*Math.PI;
+    const spd=0.03+Math.random()*0.08;
+    m.userData.vel=new THREE.Vector3(Math.cos(elev)*Math.cos(ang),Math.sin(elev),Math.cos(elev)*Math.sin(ang)).multiplyScalar(spd);
+    m.userData.spin=new THREE.Vector3((Math.random()-0.5)*0.04,(Math.random()-0.5)*0.04,(Math.random()-0.5)*0.04);
+    burstPieces.push(m); burstGroup.add(m);
+  }
+  // Ribosome spray (yellow dots)
+  const riboFragMat=new THREE.MeshStandardMaterial({color:0xffdd44,emissive:0xffaa00,emissiveIntensity:1.1,roughness:0.3,transparent:true,opacity:0.9});
+  for(let i=0;i<30;i++){
+    const m=new THREE.Mesh(new THREE.SphereGeometry(0.09+Math.random()*0.06,8,6),riboFragMat.clone());
+    const ang=Math.random()*Math.PI*2, elev=(Math.random()-0.5)*Math.PI;
+    const spd=0.07+Math.random()*0.18;
+    m.userData.vel=new THREE.Vector3(Math.cos(elev)*Math.cos(ang),Math.sin(elev),Math.cos(elev)*Math.sin(ang)).multiplyScalar(spd);
+    m.userData.spin=new THREE.Vector3(0,0,0);
+    burstPieces.push(m); burstGroup.add(m);
+  }
+})();
+
+// Shockwave ring (expands outward at moment of burst)
+const shockwaveMesh = new THREE.Mesh(
+  new THREE.TorusGeometry(0.5,0.06,8,60),
+  new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.0})
+);
+shockwaveMesh.visible=false; scene.add(shockwaveMesh);
+
+// Cytoplasm cloud (volumetric-ish point cloud expanding outward)
+const cytoCloudN=220;
+const cytoCloudGeo=new THREE.BufferGeometry();
+const ccPos=new Float32Array(cytoCloudN*3), ccCol=new Float32Array(cytoCloudN*3);
+const cytoVels=[];
+for(let i=0;i<cytoCloudN;i++){
+  ccPos[i*3]=0; ccPos[i*3+1]=0; ccPos[i*3+2]=0;
+  const ang=Math.random()*Math.PI*2, elev=(Math.random()-0.5)*Math.PI;
+  const spd=0.02+Math.random()*0.09;
+  cytoVels.push(new THREE.Vector3(Math.cos(elev)*Math.cos(ang),Math.sin(elev),Math.cos(elev)*Math.sin(ang)).multiplyScalar(spd));
+  // colour: cyan/blue cytoplasm tones
+  const t=Math.random(); ccCol[i*3]=0.1+t*0.5; ccCol[i*3+1]=0.5+t*0.4; ccCol[i*3+2]=1.0;
+}
+cytoCloudGeo.setAttribute('position',new THREE.BufferAttribute(ccPos,3));
+cytoCloudGeo.setAttribute('color',new THREE.BufferAttribute(ccCol,3));
+const cytoCloudMat=new THREE.PointsMaterial({size:0.28,vertexColors:true,transparent:true,opacity:0.0,sizeAttenuation:true});
+const cytoCloud=new THREE.Points(cytoCloudGeo,cytoCloudMat);
+cytoCloud.visible=false; scene.add(cytoCloud);
+
+// State flags
+let burstAnimating=false, burstT=0;
+let swellAnimating=false, swellT=0;
+let shockAnimating=false, shockT=0;
+let cytoAnimating=false, cytoT=0;
+let degradeAnimating=false;
 
 // ═══════════════════════════ STAGE DEFINITIONS ═════════════════════════════
-// PBP starts far right (+X), closes in on penicillin at origin each stage.
-// penicillin (molGroup) stays at origin — PBP group translates toward it.
-// Active-site residues in pbpGroup are at ~[6-8, 0, 2] local coords,
-// so at stage 4 pbpGroup.position.x = -5.8 puts Ser370 at ~[0.4,0,2] ≈ penicillin β-lactam C (x≈-2 to +2).
+// PBP approaches along +X from the right. Penicillin stays at origin.
 const STAGES=[
   {title:'Penicillin G in Bloodstream',
    desc:'Real crystallographic structure from PubChem CID 6869. The strained bicyclic core: β-lactam (4-membered) fused to thiazolidine (5-membered). ~24 kcal/mol ring strain energy drives irreversible PBP inhibition. Green atoms = β-lactam/thiazolidine core.',
-   b:0,a:0,i:0, pbp:false,hb:false, pbpX:14},
+   b:0,a:0,i:0, pbp:false,hb:false, pbpX:18},
   {title:'Approaching PBP-2X Active Site',
    desc:'PBP-2X from Streptococcus pneumoniae (PDB: 1PMD). Penicillin G diffuses toward the transpeptidase active site. The carboxylate (–COO⁻) is attracted electrostatically to Lys373 and Thr394. β-Lactam C=O aligns toward Ser370 Oγ at ~5Å.',
-   b:28,a:22,i:8, pbp:true,hb:false, pbpX:8},
+   b:28,a:22,i:8, pbp:true,hb:false, pbpX:10},
   {title:'Michaelis Complex — Non-Covalent Docking',
    desc:'H-bond network: COO⁻···Lys373 (2.7Å), COO⁻···Thr394 (2.8Å), N-H···backbone (3.0Å). Ser370 Oγ is 3.2Å from C7. Lys373 acts as a general base, lowering Ser pKa to activate it as a nucleophile.',
-   b:58,a:62,i:38, pbp:true,hb:true, pbpX:4},
+   b:58,a:62,i:38, pbp:true,hb:true, pbpX:5},
   {title:'β-Lactam Ring Opening — Nucleophilic Attack',
    desc:'CRITICAL STEP: Ser370 Oγ attacks the β-lactam C7 carbonyl. The N–C7 bond breaks, releasing ~24 kcal/mol ring-strain energy. The strained 4-membered ring opens in a highly exothermic step. IRREVERSIBLE.',
-   b:82,a:86,i:74, pbp:true,hb:true, pbpX:1},
+   b:82,a:86,i:74, pbp:true,hb:true, pbpX:2},
   {title:'Acyl–Enzyme Complex — PBP Permanently Blocked',
-   desc:'Penicillin covalently bonded to Ser370 as penicilloyl–ester. The transpeptidase active site is permanently BLOCKED. Peptidoglycan crosslinking halts → bacterial cell wall weakens → osmotic lysis → cell death.',
-   b:99,a:98,i:99, pbp:true,hb:true, pbpX:-2},
+   desc:'Penicillin G is now covalently bonded to Ser370 as a penicilloyl–ester. The transpeptidase active site is permanently BLOCKED. No new peptidoglycan crosslinks can form. The bacterium can no longer rebuild its cell wall during division.',
+   b:99,a:98,i:99, pbp:true,hb:true, pbpX:0},
+  {title:'Cell Wall Synthesis Halted — Peptidoglycan Mesh',
+   desc:'The green lattice shows the peptidoglycan mesh — alternating N-acetylglucosamine (NAG) and N-acetylmuramic acid (NAM) strands crosslinked by short peptides. PBP-2X catalyses these crosslinks. With PBP blocked, autolysins (murein hydrolases) continue degrading old strands but new ones CANNOT be synthesised. The mesh progressively weakens.',
+   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0},
+  {title:'Cell Wall Degradation — Crosslinks Cleave',
+   desc:'Autolysins cleave the peptide bridges between NAM strands. Without PBP to replace them, structural gaps emerge. The crosslink nodes (bright green spheres) drift apart as connections fail. Gram-positive bacteria like Streptococcus maintain ~5 atm internal turgor pressure — the weakened wall can no longer contain it.',
+   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0},
+  {title:'Osmotic Lysis — Membrane Rupture',
+   desc:'The peptidoglycan scaffold fails. The plasma membrane, no longer supported by the rigid wall, bulges outward under 5 atm of turgor pressure. Spheroplasts form briefly before the membrane ruptures in an irreversible lysis event. Water rushes in along the osmotic gradient — the bacterium swells and bursts.',
+   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0},
+  {title:'Bacteriolysis — Cell Death Complete',
+   desc:'The bacterium has exploded. Cytoplasmic contents — ribosomes, chromosomal DNA, enzymes, metabolites — spill into the bloodstream. The immune system (neutrophils, complement) rapidly clears the debris. This bactericidal mechanism (cell killing) explains why β-lactams are preferred for life-threatening infections over bacteriostatic drugs.',
+   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0},
 ];
 let curStage=0;
 
@@ -807,49 +1094,139 @@ function goStage(n){
   document.getElementById('s-desc').textContent=s.desc;
   setBar('m1','v1',s.b); setBar('m2','v2',s.a); setBar('m3','v3',s.i);
 
-  // Sync PBP + H-bond visibility and UI toggle state
-  if(s.pbp && !pbpGroup.visible){
-    pbpGroup.visible=true; state.pbp=true;
-    var el=document.getElementById('b-pbp'); if(el) el.classList.add('on');
-  }
-  if(!s.pbp && pbpGroup.visible){
-    pbpGroup.visible=false; state.pbp=false;
-    var el=document.getElementById('b-pbp'); if(el) el.classList.remove('on');
-  }
-  if(s.hb && !hbGroup.visible){
-    hbGroup.visible=true; state.hb=true;
-    var el2=document.getElementById('b-hb'); if(el2) el2.classList.add('on');
-  }
-  if(!s.hb && hbGroup.visible){
-    hbGroup.visible=false; state.hb=false;
-    var el2=document.getElementById('b-hb'); if(el2) el2.classList.remove('on');
-  }
+  // PBP + H-bond visibility
+  if(s.pbp&&!pbpGroup.visible){ pbpGroup.visible=true; state.pbp=true; var ep=document.getElementById('b-pbp'); if(ep)ep.classList.add('on'); }
+  if(!s.pbp&&pbpGroup.visible){ pbpGroup.visible=false; state.pbp=false; var ep=document.getElementById('b-pbp'); if(ep)ep.classList.remove('on'); }
+  if(s.hb&&!hbGroup.visible){ hbGroup.visible=true; state.hb=true; var eh=document.getElementById('b-hb'); if(eh)eh.classList.add('on'); }
+  if(!s.hb&&hbGroup.visible){ hbGroup.visible=false; state.hb=false; var eh=document.getElementById('b-hb'); if(eh)eh.classList.remove('on'); }
 
-  // Animate PBP sliding toward/away from penicillin (which stays at origin)
-  var fromX=pbpGroup.position.x, toX=s.pbpX;
-  var t2=0;
-  (function mv(){
-    t2+=0.03;
-    var p=Math.min(t2,1);
-    // ease in-out
-    p=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+  // PBP slide animation
+  var fromX=pbpGroup.position.x, toX=s.pbpX, t2=0;
+  (function mv(){ t2+=0.03;
+    var p=Math.min(t2,1); p=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
     pbpGroup.position.x=fromX+(toX-fromX)*p;
     hbGroup.position.x=pbpGroup.position.x;
     if(t2<1) requestAnimationFrame(mv);
-    else { rebuildHBonds(toX); } // rebuild H-bonds at final resting position
+    else rebuildHBonds(toX);
   })();
 
-  if(n===3){ // ring opening flash
-    blRing.material.color.setHex(0xff4422);
-    blRing.material.opacity=1.0;
-    atomMeshes.forEach(m=>{if(m.userData.isBeta){m.material.color.setHex(0xff4422);m.material.emissive.setHex(0xff4422);}});
-    setTimeout(()=>{
-      blRing.material.color.setHex(0x33ee77); blRing.material.opacity=0.65;
-      atomMeshes.forEach(m=>{if(m.userData.isBeta){m.material.color.setHex(0x33ee77);m.material.emissive.setHex(0x33ee77);}});
-    },1600);
+  // ── Stage-specific effects ──────────────────────────────────────────────
+  // Always reset bacterium + burst state first
+  bacteriaGroup.visible=false;
+  burstGroup.visible=false; cytoCloud.visible=false; shockwaveMesh.visible=false;
+  burstAnimating=false; swellAnimating=false; shockAnimating=false; cytoAnimating=false; degradeAnimating=false;
+  // Reset all burst pieces to origin
+  burstPieces.forEach(m=>{ m.position.set(0,0,0); m.material.opacity=m.material.userData ? m.material.userData.baseOp||0.9 : 0.9; });
+  // Reset cytoplasm cloud
+  const ccpa=cytoCloudGeo.attributes.position.array;
+  for(let i=0;i<cytoCloudN;i++){ccpa[i*3]=0;ccpa[i*3+1]=0;ccpa[i*3+2]=0;}
+  cytoCloudGeo.attributes.position.needsUpdate=true; cytoCloudMat.opacity=0;
+  // Reset shockwave
+  shockwaveMesh.scale.setScalar(0.1); shockwaveMesh.material.opacity=0;
+  // Reset PGN strands
+  bactRefs.pgn_strands.forEach(m=>{
+    if(m.userData.origPos) m.position.copy(m.userData.origPos);
+    if(m.userData.origQuat) m.quaternion.copy(m.userData.origQuat);
+    m.material.opacity=m.userData.isBridge?0.75:0.85;
+    m.material.emissiveIntensity=m.userData.isBridge?0.8:0.9;
+    m.visible=true;
+  });
+  bactRefs.pgn_nodes.forEach(m=>{ if(m.userData.origPos) m.position.copy(m.userData.origPos); m.visible=true; m.material.emissiveIntensity=1.1; });
+  // Reset bacterium material opacities
+  if(bactRefs.pgnMats) bactRefs.pgnMats.forEach(m=>{ m.opacity=0.38; m.emissiveIntensity=0.55; });
+  if(bactRefs.membraneMats) bactRefs.membraneMats.forEach(m=>m.opacity=0.5);
+  if(bactRefs.cytoMats) bactRefs.cytoMats.forEach(m=>m.opacity=0.22);
+  if(bactRefs.nucleoidMat){ bactRefs.nucleoidMat.opacity=0.55; bactRefs.nucleoidMat.emissiveIntensity=0.9; }
+  if(bactRefs.ribosomes) bactRefs.ribosomes.forEach(m=>{ if(m.userData.origPos)m.position.copy(m.userData.origPos); m.visible=true; m.material.opacity=1.0; });
+  bacteriaGroup.scale.setScalar(1.0);
+
+  if(n===3){
+    blRing.material.color.setHex(0xff4422); blRing.material.opacity=1.0;
+    atomMeshes.forEach(m=>{ if(m.userData.isBeta){m.material.color.setHex(0xff4422);m.material.emissive.setHex(0xff4422);} });
+    setTimeout(()=>{ blRing.material.color.setHex(0x33ee77); blRing.material.opacity=0.65;
+      atomMeshes.forEach(m=>{ if(m.userData.isBeta){m.material.color.setHex(0x33ee77);m.material.emissive.setHex(0x33ee77);} }); },1600);
   }
-  // Refresh VR menu stage highlights
-  if(typeof vrMenu !== 'undefined') vrMenu.draw();
+
+  if(n===5){
+    // Show intact bacterium — all layers healthy, PGN glowing green
+    bacteriaGroup.visible=true;
+    // Pulse PGN strands to show synthesis has stopped
+    let pt=0;
+    (function pgnPulse(){
+      pt+=0.018; if(!bacteriaGroup.visible||curStage!==5) return;
+      const emi=0.5+0.5*Math.abs(Math.sin(pt));
+      bactRefs.pgn_strands.forEach(m=>m.material.emissiveIntensity=emi);
+      bactRefs.pgn_nodes.forEach(m=>m.material.emissiveIntensity=emi*1.3);
+      requestAnimationFrame(pgnPulse);
+    })();
+  }
+
+  if(n===6){
+    // Degrading — PGN strands snap and drift, gaps open, bridges break first
+    bacteriaGroup.visible=true;
+    degradeAnimating=true;
+    // Snap bridges first, then glycan strands
+    const allBreakable=[...bactRefs.pgn_strands];
+    // Stagger breaking over ~3 seconds
+    allBreakable.forEach((m,idx)=>{
+      const delay=20+Math.random()*2800;
+      setTimeout(()=>{
+        if(curStage!==6) return;
+        const origX=m.userData.origPos ? m.userData.origPos.x : m.position.x;
+        const origY=m.userData.origPos ? m.userData.origPos.y : m.position.y;
+        const origZ=m.userData.origPos ? m.userData.origPos.z : m.position.z;
+        m.userData.driftVel=new THREE.Vector3((Math.random()-0.5)*0.012,(Math.random()-0.5)*0.008,(Math.random()-0.5)*0.010);
+        m.userData.breaking=true;
+        m.material.color.setHex(0xff6622); m.material.emissive.setHex(0xff3300);
+        setTimeout(()=>{ m.visible=false; },300);
+      },delay);
+    });
+    bactRefs.pgn_nodes.forEach((m,idx)=>{
+      setTimeout(()=>{
+        if(curStage!==6) return;
+        m.userData.driftVel=new THREE.Vector3((Math.random()-0.5)*0.02,(Math.random()-0.5)*0.015,(Math.random()-0.5)*0.018);
+        m.userData.breaking=true;
+        m.material.color.setHex(0xffaa44); m.material.emissive.setHex(0xff6600);
+        setTimeout(()=>{ m.visible=false; m.userData.breaking=false; },800);
+      },100+Math.random()*3200);
+    });
+    // Slowly increase PGN opacity flicker to show damage
+    bactRefs.pgnMats.forEach(m=>{ m.opacity=0.22; m.emissiveIntensity=0.3; });
+  }
+
+  if(n===7){
+    // Osmotic lysis: bacterium visibly SWELLS — scale increases, membrane goes taut
+    bacteriaGroup.visible=true;
+    // Hide PGN structure (wall is gone)
+    bactRefs.pgn_strands.forEach(m=>m.visible=false);
+    bactRefs.pgn_nodes.forEach(m=>m.visible=false);
+    bactRefs.pgnMats.forEach(m=>m.opacity=0.06);
+    // Membrane becomes bright and taut
+    bactRefs.membraneMats.forEach(m=>{ m.color.setHex(0x55aaff); m.emissive.setHex(0x2244cc); m.emissiveIntensity=0.9; m.opacity=0.75; });
+    // Start swelling animation
+    swellAnimating=true; swellT=0;
+  }
+
+  if(n===8){
+    // EXPLOSION — hide bacterium, show burst group + cytoplasm cloud + shockwave
+    bacteriaGroup.visible=false;
+    burstGroup.visible=true;
+    cytoCloud.visible=true;
+    shockwaveMesh.visible=true;
+    shockwaveMesh.position.copy(BACT_POS);
+    burstGroup.position.copy(BACT_POS);
+    cytoCloud.position.copy(BACT_POS);
+    // Reset all pieces to centre
+    burstPieces.forEach(m=>m.position.set(0,0,0));
+    const ccpa2=cytoCloudGeo.attributes.position.array;
+    for(let i=0;i<cytoCloudN;i++){ccpa2[i*3]=0;ccpa2[i*3+1]=0;ccpa2[i*3+2]=0;}
+    cytoCloudGeo.attributes.position.needsUpdate=true;
+    cytoCloudMat.opacity=0.85;
+    burstAnimating=true; burstT=0;
+    shockAnimating=true; shockT=0; cytoAnimating=true; cytoT=0;
+  }
+
+  if(typeof vrMenu!=='undefined') vrMenu.draw();
 }
 
 function setBar(id,vid,pct){
@@ -916,7 +1293,7 @@ window.addEventListener('mousemove',e=>{
 // ═══════════════════════════ VR INTERACTIONS MENU ══════════════════════════
 // Moveable 3D panel — grip the grab bar to drag it in world space
 const vrMenu = (function(){
-  const W=512, H=580;
+  const W=512, H=780;
   const MW=2.6, MH=H/W*MW; // world-unit size
   const pCv = document.createElement('canvas');
   pCv.width = W; pCv.height = H;
@@ -932,11 +1309,15 @@ const vrMenu = (function(){
     {label:'⊞ Atom Labels',    key:'lbl'},
   ];
   const STAGE_BTNS = [
-    {label:'① Free Drug',   idx:0},
-    {label:'② Approach',    idx:1},
-    {label:'③ Docking',     idx:2},
-    {label:'④ Ring Opens',  idx:3},
-    {label:'⑤ Acyl Bond',   idx:4},
+    {label:'① Free Drug',    idx:0},
+    {label:'② Approach',     idx:1},
+    {label:'③ Docking',      idx:2},
+    {label:'④ Ring Opens',   idx:3},
+    {label:'⑤ Acyl Bond',    idx:4},
+    {label:'⑥ PBP Blocked',  idx:5},
+    {label:'⑦ Wall Breaks',  idx:6},
+    {label:'⑧ Lysis',        idx:7},
+    {label:'⑨ Cell Death',   idx:8},
   ];
 
   const BTN_H=40, BTN_W=228, MARGIN=16, TOGGLE_TOP=72;
@@ -1078,7 +1459,7 @@ const vrMenu = (function(){
 })();
 
 // ── VR Menu drag state ────────────────────────────────────────────────────
-var vrMenuDrag = {active:false, ctrlIdx:-1, offset:new THREE.Vector3()};
+var vrMenuDrag = {active:false, ctrlIdx:-1, toggleOffset:0};
 
 var vrMenuVisible = false;
 var vrMenuToggleMesh = (function(){
@@ -1229,6 +1610,67 @@ function render(){
   // β-ring pulse
   blRing.rotation.y+=0.013;
   blRing.material.opacity=0.45+0.25*Math.sin(clk*2.4);
+  // ── Stage 6: breaking PGN strands drift ──────────────────────────────────
+  if(degradeAnimating && bacteriaGroup.visible){
+    bactRefs.pgn_strands.forEach(m=>{
+      if(m.userData.breaking && m.userData.driftVel){
+        m.position.add(m.userData.driftVel);
+        m.material.opacity=Math.max(0,m.material.opacity-0.018);
+      }
+    });
+    bactRefs.pgn_nodes.forEach(m=>{
+      if(m.userData.breaking && m.userData.driftVel){
+        m.position.add(m.userData.driftVel);
+        m.material.opacity=Math.max(0,(m.material.opacity||1)-0.008);
+      }
+    });
+  }
+  // ── Stage 7: osmotic swelling ─────────────────────────────────────────────
+  if(swellAnimating){
+    swellT+=0.004;
+    const sp=Math.min(swellT,1);
+    // Swell to 1.55x — bacterium bulges outward
+    bacteriaGroup.scale.setScalar(1.0+sp*0.55);
+    // Membrane brightens and flickers with pressure
+    const flicker=0.9+0.3*Math.sin(clk*8+swellT*4);
+    if(bactRefs.membraneMats) bactRefs.membraneMats.forEach(m=>{ m.emissiveIntensity=flicker; m.opacity=Math.min(0.95,0.75+sp*0.2); });
+    // Nucleoid dims (gets diluted)
+    if(bactRefs.nucleoidMat) bactRefs.nucleoidMat.opacity=Math.max(0.1,0.55-sp*0.4);
+    if(swellT>=1) swellAnimating=false;
+  }
+  // ── Stage 8: burst pieces fly outward ────────────────────────────────────
+  if(burstAnimating){
+    burstT+=0.013;
+    burstPieces.forEach(m=>{
+      m.position.add(m.userData.vel);
+      m.rotation.x+=m.userData.spin.x; m.rotation.y+=m.userData.spin.y; m.rotation.z+=m.userData.spin.z;
+      // Slow down (drag) + gravity
+      m.userData.vel.y-=0.0006;
+      m.userData.vel.multiplyScalar(0.998);
+      m.material.opacity=Math.max(0,m.material.opacity-0.0025);
+    });
+    if(burstT>3.5){ burstAnimating=false; burstGroup.visible=false; }
+  }
+  // ── Stage 8: cytoplasm cloud expands ─────────────────────────────────────
+  if(cytoAnimating){
+    cytoT+=0.014;
+    const cpa=cytoCloudGeo.attributes.position.array;
+    for(let ci=0;ci<cytoCloudN;ci++){
+      cpa[ci*3]  +=cytoVels[ci].x; cpa[ci*3+1]+=cytoVels[ci].y; cpa[ci*3+2]+=cytoVels[ci].z;
+      cytoVels[ci].multiplyScalar(0.997);
+    }
+    cytoCloudGeo.attributes.position.needsUpdate=true;
+    cytoCloudMat.opacity=Math.max(0, 0.85-cytoT*0.28);
+    if(cytoT>3){ cytoAnimating=false; cytoCloud.visible=false; }
+  }
+  // ── Stage 8: shockwave ring expands ──────────────────────────────────────
+  if(shockAnimating){
+    shockT+=0.022;
+    shockwaveMesh.scale.setScalar(0.5+shockT*12);
+    shockwaveMesh.material.opacity=Math.max(0, 0.9-shockT*1.1);
+    shockwaveMesh.rotation.x+=0.03; shockwaveMesh.rotation.y+=0.02;
+    if(shockT>0.8){ shockAnimating=false; shockwaveMesh.visible=false; }
+  }
   // dynamic lights
   fill.position.x=9*Math.cos(clk*0.22); fill.position.z=9*Math.sin(clk*0.22)+6;
   pbpL.intensity=2.5+Math.sin(clk*1.8)*0.7;
@@ -1258,23 +1700,13 @@ function render(){
       }
     }
   }
-  // ── VR menu billboarding — always face camera ────────────────────────────
-  if(renderer.xr.isPresenting && (vrMenu.mesh.visible || vrMenuToggleMesh.visible)){
+  // ── VR menu billboarding — always face camera (only when not being dragged / parented to ctrl) ──
+  if(renderer.xr.isPresenting && !vrMenuDrag.active){
     var camWP = new THREE.Vector3();
     camera.getWorldPosition(camWP);
     if(vrMenu.mesh.visible) vrMenu.mesh.lookAt(camWP);
     if(vrMenuToggleMesh.visible) vrMenuToggleMesh.lookAt(camWP);
     if(vrPanel.mesh.visible) vrPanel.mesh.lookAt(camWP);
-  }
-  // Move menu if being dragged (trigger held on grab handle)
-  if(vrMenuDrag.active && vrMenuDrag.ctrlIdx >= 0 && vrMenuDrag.ctrlIdx < controllers.length){
-    var dc = controllers[vrMenuDrag.ctrlIdx];
-    var dcp = new THREE.Vector3().setFromMatrixPosition(dc.matrixWorld);
-    // Direct: menu position = controller world pos + fixed offset (set at grab time)
-    vrMenu.mesh.position.copy(dcp).add(vrMenuDrag.offset);
-    vrMenuToggleMesh.position.copy(vrMenu.mesh.position).add(
-      new THREE.Vector3(0, vrMenu.MH/2 + 0.16, 0)
-    );
   }
   // VR controller grip drag = rotate molecule
   if(renderer.xr.isPresenting){
