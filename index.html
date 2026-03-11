@@ -417,9 +417,9 @@ for(var ci=0; ci<2; ci++){
         if(grabHits.length){
           vrMenuDrag.active = true;
           vrMenuDrag.ctrlIdx = i;
-          // offset = menu world pos - controller world pos
-          var ctrlPos = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
-          vrMenuDrag.offset.copy(vrMenu.mesh.position).sub(ctrlPos);
+          // offset = menu world pos - controller world pos (both in world space)
+          var ctrlWP = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
+          vrMenuDrag.offset.copy(vrMenu.mesh.position).sub(ctrlWP);
           return;
         }
 
@@ -693,10 +693,10 @@ function makeLbl(txt,pos){
 });
 
 // ═══════════════════════════ PBP-2X PROTEIN (from 1PMD) ════════════════════
-const pbpGroup=new THREE.Group(); pbpGroup.visible=false; sceneGroup.add(pbpGroup);
+const pbpGroup=new THREE.Group(); pbpGroup.visible=false; pbpGroup.position.x=14; sceneGroup.add(pbpGroup);
 
-// Render CA trace as smooth ribbon tube
-const pbpPts = PBP_CA.map(p=>new THREE.Vector3(p[0]+8,p[1]+1,p[2]+2));
+// Render CA trace as smooth ribbon tube — built around local origin (pbpGroup.position handles world X)
+const pbpPts = PBP_CA.map(p=>new THREE.Vector3(p[0],p[1]+1,p[2]+2));
 const pbpCurve = new THREE.CatmullRomCurve3(pbpPts,false,'catmullrom',0.5);
 
 // Colour by position along chain (N→C: blue→red)
@@ -718,19 +718,19 @@ const pbpMat=new THREE.MeshStandardMaterial({
 pbpMat.emissive=new THREE.Color(0x220044);
 pbpGroup.add(new THREE.Mesh(pbpTube,pbpMat));
 
-// Active site pocket sphere
+// Active site pocket sphere — centred on active site in local coords
 const pock=new THREE.Mesh(
   new THREE.SphereGeometry(2.5,20,16),
   new THREE.MeshStandardMaterial({color:0xaa44ff,emissive:0x440088,emissiveIntensity:0.4,roughness:0.9,transparent:true,opacity:0.13,side:THREE.DoubleSide})
 );
-pock.position.set(7.5,0.5,2.5); pbpGroup.add(pock);
+pock.position.set(-0.5,0.5,2.5); pbpGroup.add(pock);
 
-// Key residue markers (Ser, Lys, Thr near active site)
+// Key residue markers (Ser, Lys, Thr near active site) — local coords (no +8)
 const KEY_RES=[
-  {pos:[6.2,0.1,1.8],col:0xffaa00,lbl:'Ser370 Oγ — Nucleophile attacks β-lactam C7'},
-  {pos:[5.5,1.8,2.8],col:0x00ddff,lbl:'Lys373 Nζ — Activates Ser via proton transfer'},
-  {pos:[5.8,-1.8,2.2],col:0x00ff88,lbl:'Thr394 Oγ — H-bonds to carboxylate O⁻'},
-  {pos:[4.9,2.8,3.4],col:0xff44aa,lbl:'Glu166 — Stabilises catalytic Lys373'},
+  {pos:[-1.8, 0.1,1.8],col:0xffaa00,lbl:'Ser370 Oγ — Nucleophile attacks β-lactam C7'},
+  {pos:[-2.5, 1.8,2.8],col:0x00ddff,lbl:'Lys373 Nζ — Activates Ser via proton transfer'},
+  {pos:[-2.2,-1.8,2.2],col:0x00ff88,lbl:'Thr394 Oγ — H-bonds to carboxylate O⁻'},
+  {pos:[-3.1, 2.8,3.4],col:0xff44aa,lbl:'Glu166 — Stabilises catalytic Lys373'},
 ];
 KEY_RES.forEach(({pos,col,lbl})=>{
   const m=new THREE.Mesh(new THREE.SphereGeometry(0.45,14,10),
@@ -758,30 +758,44 @@ function dashedLine(a,b,col=0x00ccff){
     hbGroup.add(mesh);
   }
 }
-// H-bonds from penicillin atoms to PBP residues
-const a4=PEN_ATOMS[4], a2=PEN_ATOMS[2], a3=PEN_ATOMS[3], a7=PEN_ATOMS[7];
-dashedLine([a4.x,a4.y,a4.z],[6.2,0.1,1.8],0x00ffcc); // O4 (β-lactam C=O) → Ser
-dashedLine([a2.x,a2.y,a2.z],[5.5,1.8,2.8],0x00ccff); // O2 (COOH) → Lys
-dashedLine([a3.x,a3.y,a3.z],[5.8,-1.8,2.2],0x00ff88); // O3 (COOH) → Thr
-dashedLine([a7.x,a7.y,a7.z],[6.2,0.1,1.8],0xffaa00); // N-H → Ser backbone
+// H-bonds from penicillin atoms to PBP residues — rebuilt per stage so they're accurate
+// PBP residue positions are in pbpGroup LOCAL space; we add pbpOffsetX to convert to world.
+// Penicillin atom positions are in molGroup (= world, since molGroup stays at origin).
+function rebuildHBonds(pbpOffsetX){
+  while(hbGroup.children.length) hbGroup.remove(hbGroup.children[0]);
+  const a4=PEN_ATOMS[4], a2=PEN_ATOMS[2], a3=PEN_ATOMS[3], a7=PEN_ATOMS[7];
+  // PBP residue world X = local X + pbpOffsetX (local positions updated above: Ser=-1.8, Lys=-2.5, Thr=-2.2)
+  var ser  = [-1.8+pbpOffsetX,  0.1, 1.8];
+  var lys  = [-2.5+pbpOffsetX,  1.8, 2.8];
+  var thr  = [-2.2+pbpOffsetX, -1.8, 2.2];
+  dashedLine([a4.x,a4.y,a4.z], ser,  0x00ffcc);
+  dashedLine([a2.x,a2.y,a2.z], lys,  0x00ccff);
+  dashedLine([a3.x,a3.y,a3.z], thr,  0x00ff88);
+  dashedLine([a7.x,a7.y,a7.z], ser,  0xffaa00);
+}
+rebuildHBonds(14);
 
 // ═══════════════════════════ STAGE DEFINITIONS ═════════════════════════════
+// PBP starts far right (+X), closes in on penicillin at origin each stage.
+// penicillin (molGroup) stays at origin — PBP group translates toward it.
+// Active-site residues in pbpGroup are at ~[6-8, 0, 2] local coords,
+// so at stage 4 pbpGroup.position.x = -5.8 puts Ser370 at ~[0.4,0,2] ≈ penicillin β-lactam C (x≈-2 to +2).
 const STAGES=[
   {title:'Penicillin G in Bloodstream',
    desc:'Real crystallographic structure from PubChem CID 6869. The strained bicyclic core: β-lactam (4-membered) fused to thiazolidine (5-membered). ~24 kcal/mol ring strain energy drives irreversible PBP inhibition. Green atoms = β-lactam/thiazolidine core.',
-   b:0,a:0,i:0, pbp:false,hb:false, mpos:[0,0,0]},
+   b:0,a:0,i:0, pbp:false,hb:false, pbpX:14},
   {title:'Approaching PBP-2X Active Site',
    desc:'PBP-2X from Streptococcus pneumoniae (PDB: 1PMD). Penicillin G diffuses toward the transpeptidase active site. The carboxylate (–COO⁻) is attracted electrostatically to Lys373 and Thr394. β-Lactam C=O aligns toward Ser370 Oγ at ~5Å.',
-   b:28,a:22,i:8, pbp:true,hb:false, mpos:[-1.4,0,0]},
+   b:28,a:22,i:8, pbp:true,hb:false, pbpX:8},
   {title:'Michaelis Complex — Non-Covalent Docking',
    desc:'H-bond network: COO⁻···Lys373 (2.7Å), COO⁻···Thr394 (2.8Å), N-H···backbone (3.0Å). Ser370 Oγ is 3.2Å from C7. Lys373 acts as a general base, lowering Ser pKa to activate it as a nucleophile.',
-   b:58,a:62,i:38, pbp:true,hb:true, mpos:[-2.0,0,0]},
+   b:58,a:62,i:38, pbp:true,hb:true, pbpX:4},
   {title:'β-Lactam Ring Opening — Nucleophilic Attack',
-   desc:'CRITICAL STEP: Ser370 Oγ attacks the β-lactam C7 carbonyl. The N–C7 bond breaks (C–N bond cleavage), releasing ~24 kcal/mol ring-strain energy. The highly strained 4-membered ring opens in a highly exothermic step. IRREVERSIBLE.',
-   b:82,a:86,i:74, pbp:true,hb:true, mpos:[-2.6,0,0]},
+   desc:'CRITICAL STEP: Ser370 Oγ attacks the β-lactam C7 carbonyl. The N–C7 bond breaks, releasing ~24 kcal/mol ring-strain energy. The strained 4-membered ring opens in a highly exothermic step. IRREVERSIBLE.',
+   b:82,a:86,i:74, pbp:true,hb:true, pbpX:1},
   {title:'Acyl–Enzyme Complex — PBP Permanently Blocked',
-   desc:'Penicillin covalently bonded to Ser370 as penicilloyl–ester. The transpeptidase active site is permanently BLOCKED. Peptidoglycan crosslinking halts → bacterial cell wall weakens → osmotic lysis → cell death. Mechanism of penicillin bactericidal action.',
-   b:99,a:98,i:99, pbp:true,hb:true, mpos:[-3.0,0,0]},
+   desc:'Penicillin covalently bonded to Ser370 as penicilloyl–ester. The transpeptidase active site is permanently BLOCKED. Peptidoglycan crosslinking halts → bacterial cell wall weakens → osmotic lysis → cell death.',
+   b:99,a:98,i:99, pbp:true,hb:true, pbpX:-2},
 ];
 let curStage=0;
 
@@ -792,17 +806,39 @@ function goStage(n){
   document.getElementById('s-title').textContent=s.title;
   document.getElementById('s-desc').textContent=s.desc;
   setBar('m1','v1',s.b); setBar('m2','v2',s.a); setBar('m3','v3',s.i);
-  if(s.pbp&&!pbpGroup.visible){ pbpGroup.visible=true; document.getElementById('b-pbp').classList.add('on'); }
-  if(s.hb&&!hbGroup.visible){ hbGroup.visible=true; document.getElementById('b-hb').classList.add('on'); }
-  // animate molecule toward PBP
-  const tx=s.mpos[0],ty=s.mpos[1],tz=s.mpos[2];
-  const sx=molGroup.position.x,sy=molGroup.position.y,sz=molGroup.position.z;
-  let t=0; const mv=()=>{t+=0.025;
-    molGroup.position.x=sx+(tx-sx)*Math.min(t,1);
-    molGroup.position.y=sy+(ty-sy)*Math.min(t,1);
-    molGroup.position.z=sz+(tz-sz)*Math.min(t,1);
-    if(t<1)requestAnimationFrame(mv);};
-  mv();
+
+  // Sync PBP + H-bond visibility and UI toggle state
+  if(s.pbp && !pbpGroup.visible){
+    pbpGroup.visible=true; state.pbp=true;
+    var el=document.getElementById('b-pbp'); if(el) el.classList.add('on');
+  }
+  if(!s.pbp && pbpGroup.visible){
+    pbpGroup.visible=false; state.pbp=false;
+    var el=document.getElementById('b-pbp'); if(el) el.classList.remove('on');
+  }
+  if(s.hb && !hbGroup.visible){
+    hbGroup.visible=true; state.hb=true;
+    var el2=document.getElementById('b-hb'); if(el2) el2.classList.add('on');
+  }
+  if(!s.hb && hbGroup.visible){
+    hbGroup.visible=false; state.hb=false;
+    var el2=document.getElementById('b-hb'); if(el2) el2.classList.remove('on');
+  }
+
+  // Animate PBP sliding toward/away from penicillin (which stays at origin)
+  var fromX=pbpGroup.position.x, toX=s.pbpX;
+  var t2=0;
+  (function mv(){
+    t2+=0.03;
+    var p=Math.min(t2,1);
+    // ease in-out
+    p=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+    pbpGroup.position.x=fromX+(toX-fromX)*p;
+    hbGroup.position.x=pbpGroup.position.x;
+    if(t2<1) requestAnimationFrame(mv);
+    else { rebuildHBonds(toX); } // rebuild H-bonds at final resting position
+  })();
+
   if(n===3){ // ring opening flash
     blRing.material.color.setHex(0xff4422);
     blRing.material.opacity=1.0;
@@ -828,7 +864,8 @@ function setBar(id,vid,pct){
 const state={rot:true,pbp:false,hb:false,sur:false,rbc:true,lbl:false};
 function tog(k){
   state[k]=!state[k];
-  document.getElementById('b-'+k).classList.toggle('on',state[k]);
+  var el=document.getElementById('b-'+k);
+  if(el) el.classList.toggle('on',state[k]);
   if(k==='pbp') pbpGroup.visible=state.pbp;
   if(k==='hb')  hbGroup.visible=state.hb;
   if(k==='sur') surfMesh.visible=state.sur;
@@ -1172,8 +1209,11 @@ function render(){
   if(state.rot&&!isDrag) rY+=0.004;
   sceneGroup.rotation.x=rX; sceneGroup.rotation.y=rY;
   lblGroup.children.forEach(l=>l.quaternion.copy(camera.quaternion));
-  molGroup.position.y=STAGES[curStage].mpos[1]+Math.sin(clk*0.55)*0.22;
+  // molGroup floats at origin (stage positioning is now handled by pbpGroup.position.x)
+  molGroup.position.y=Math.sin(clk*0.55)*0.22;
+  // pbpGroup floats in Y; hbGroup tracks pbpGroup X and also floats Y
   pbpGroup.position.y=Math.sin(clk*0.55)*0.22;
+  hbGroup.position.x=pbpGroup.position.x;
   hbGroup.position.y=Math.sin(clk*0.55)*0.22;
   // RBC flow
   rbcGroup.children.forEach(m=>{
@@ -1218,22 +1258,22 @@ function render(){
       }
     }
   }
-  // Move menu if being dragged (grip on grab handle)
+  // ── VR menu billboarding — always face camera ────────────────────────────
+  if(renderer.xr.isPresenting && (vrMenu.mesh.visible || vrMenuToggleMesh.visible)){
+    var camWP = new THREE.Vector3();
+    camera.getWorldPosition(camWP);
+    if(vrMenu.mesh.visible) vrMenu.mesh.lookAt(camWP);
+    if(vrMenuToggleMesh.visible) vrMenuToggleMesh.lookAt(camWP);
+    if(vrPanel.mesh.visible) vrPanel.mesh.lookAt(camWP);
+  }
+  // Move menu if being dragged (trigger held on grab handle)
   if(vrMenuDrag.active && vrMenuDrag.ctrlIdx >= 0 && vrMenuDrag.ctrlIdx < controllers.length){
     var dc = controllers[vrMenuDrag.ctrlIdx];
     var dcp = new THREE.Vector3().setFromMatrixPosition(dc.matrixWorld);
+    // Direct: menu position = controller world pos + fixed offset (set at grab time)
     vrMenu.mesh.position.copy(dcp).add(vrMenuDrag.offset);
-    // Keep toggle button attached just above menu
-    vrMenuToggleMesh.position.set(
-      vrMenu.mesh.position.x,
-      vrMenu.mesh.position.y + vrMenu.MH/2 + 0.14,
-      vrMenu.mesh.position.z
-    );
-    // Keep info panel close to menu
-    vrPanel.mesh.position.set(
-      vrMenu.mesh.position.x + vrMenu.MW/2 + 2.4,
-      vrMenu.mesh.position.y,
-      vrMenu.mesh.position.z
+    vrMenuToggleMesh.position.copy(vrMenu.mesh.position).add(
+      new THREE.Vector3(0, vrMenu.MH/2 + 0.16, 0)
     );
   }
   // VR controller grip drag = rotate molecule
