@@ -36,7 +36,7 @@ canvas{display:block;position:fixed;inset:0;width:100%!important;height:100%!imp
 .cb:hover,.cb.on{background:rgba(255,50,80,.14);border-color:#ff3355;color:#ff3355;
   box-shadow:0 0 10px rgba(255,50,80,.2)}
 /* VR BUTTON */
-#vr-btn{position:absolute;bottom:80px;right:14px;
+#vr-btn{position:absolute;bottom:114px;right:14px;
   padding:12px 20px;background:rgba(255,50,80,.12);
   border:1px solid #ff3355;border-radius:4px;
   color:#ff3355;font-family:'Rajdhani',sans-serif;font-size:13px;font-weight:700;
@@ -44,6 +44,7 @@ canvas{display:block;position:fixed;inset:0;width:100%!important;height:100%!imp
   text-shadow:0 0 10px #ff3355;box-shadow:0 0 20px rgba(255,50,80,.2);
   transition:all .2s;display:block}
 #vr-btn:hover{background:rgba(255,50,80,.25);box-shadow:0 0 30px rgba(255,50,80,.4)}
+#vrdebug{position:absolute;bottom:78px;right:14px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,180,100,.7);letter-spacing:.4px;line-height:1.8;pointer-events:none;text-align:right}
 /* METER */
 #em{position:absolute;bottom:14px;right:14px;width:182px}
 .ml{display:flex;justify-content:space-between;font-size:8px;margin-bottom:4px}
@@ -163,6 +164,7 @@ canvas{display:block;position:fixed;inset:0;width:100%!important;height:100%!imp
     <button class="sb" onclick="goStage(3)">④ Ring Opens</button>
     <button class="sb" onclick="goStage(4)">⑤ Acyl Bond</button>
   </div>
+  <div id="vrdebug"></div>
   <button id="vr-btn" onclick="enterVR()">🥽 Enter VR</button>
   <div id="tip"><div class="tn" id="t-name"></div><div class="ti" id="t-info"></div></div>
 </div>
@@ -236,7 +238,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.3;
-renderer.xr.enabled = true; // Enable WebXR
+renderer.xr.enabled = true;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x080008, 0.019);
@@ -245,11 +247,119 @@ scene.background = new THREE.Color(0x08000f);
 const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 400);
 camera.position.set(0,0,22);
 
-// XR Camera Rig — wraps camera so head tracking works correctly
+// XR RIG - required for proper head tracking in VR
 const xrRig = new THREE.Group();
+xrRig.position.set(0,0,22);
 xrRig.add(camera);
-xrRig.position.set(0, 0, 22); // Start position inside vessel
 scene.add(xrRig);
+
+// VR FLOATING PANEL - 3D canvas that appears in headset when you select an atom
+const vrPanel = (function(){
+  const pCv = document.createElement('canvas');
+  pCv.width = 512; pCv.height = 256;
+  const pCtx = pCv.getContext('2d');
+  const tex = new THREE.CanvasTexture(pCv);
+  function draw(title, desc){
+    pCtx.clearRect(0,0,512,256);
+    pCtx.fillStyle='rgba(4,0,14,0.93)';
+    pCtx.fillRect(0,0,512,256);
+    pCtx.strokeStyle='rgba(255,50,80,0.8)';
+    pCtx.lineWidth=2; pCtx.strokeRect(2,2,508,252);
+    pCtx.fillStyle='#ff3355';
+    pCtx.font='bold 22px monospace';
+    pCtx.textAlign='center';
+    pCtx.fillText('BLOODSTREAM VR', 256, 32);
+    pCtx.fillStyle='rgba(255,120,140,0.7)';
+    pCtx.font='12px monospace';
+    pCtx.fillText('Penicillin G x PBP-2X', 256, 52);
+    pCtx.strokeStyle='rgba(255,50,80,0.3)'; pCtx.lineWidth=1;
+    pCtx.beginPath(); pCtx.moveTo(20,64); pCtx.lineTo(492,64); pCtx.stroke();
+    pCtx.fillStyle='#ffcc88';
+    pCtx.font='bold 16px monospace'; pCtx.textAlign='left';
+    pCtx.fillText(title, 20, 88);
+    pCtx.fillStyle='rgba(240,210,220,0.85)';
+    pCtx.font='11px monospace';
+    var words=desc.split(' '), line='', y=110;
+    words.forEach(function(w){
+      var t=line+w+' ';
+      if(pCtx.measureText(t).width>470 && line){ pCtx.fillText(line.trim(),20,y); line=w+' '; y+=17; }
+      else line=t;
+    });
+    if(line.trim()) pCtx.fillText(line.trim(),20,y);
+    pCtx.fillStyle='rgba(150,180,255,0.55)';
+    pCtx.font='10px monospace'; pCtx.textAlign='center';
+    pCtx.fillText('TRIGGER = select atom   GRIP = rotate', 256, 236);
+    tex.needsUpdate = true;
+  }
+  var mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(4,2),
+    new THREE.MeshBasicMaterial({map:tex, transparent:true, depthWrite:false, side:THREE.DoubleSide})
+  );
+  mesh.visible = false;
+  scene.add(mesh);
+  return {mesh:mesh, draw:draw};
+})();
+
+// VR CONTROLLERS - Quest left and right hand controllers
+const controllers = [];
+const ctrlState = [{grip:false,prevPos:null},{grip:false,prevPos:null}];
+for(var ci=0; ci<2; ci++){
+  (function(i){
+    var ctrl = renderer.xr.getController(i);
+    xrRig.add(ctrl);
+    // Controller body
+    var cMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02,0.035,0.14,12),
+      new THREE.MeshStandardMaterial({color:0x222233,emissive:0x111122,roughness:0.4,metalness:0.7})
+    );
+    cMesh.rotation.x = Math.PI/2;
+    ctrl.add(cMesh);
+    // Trigger glow dot
+    var tDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.012,8,6),
+      new THREE.MeshStandardMaterial({color:0xff3355,emissive:0xff3355,emissiveIntensity:0.6})
+    );
+    tDot.position.z = -0.07;
+    ctrl.add(tDot);
+    // Ray line pointer
+    var lineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-8)
+    ]);
+    ctrl.add(new THREE.Line(lineGeo,
+      new THREE.LineBasicMaterial({color:0xff3355, transparent:true, opacity:0.45})
+    ));
+    controllers.push(ctrl);
+    // TRIGGER pressed: raycast and select atom
+    ctrl.addEventListener('selectstart', function(){
+      var origin = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
+      var dir = new THREE.Vector3(0,0,-1).applyMatrix4(
+        new THREE.Matrix4().extractRotation(ctrl.matrixWorld)
+      );
+      ray.set(origin, dir);
+      var targets = atomMeshes.concat(pbpGroup.children.filter(function(c){ return c.userData.lbl; }));
+      var hits = ray.intersectObjects(targets);
+      if(hits.length && hits[0].object.userData.lbl){
+        var obj = hits[0].object;
+        var sym = obj.userData.sym || '';
+        var idx2 = obj.userData.idx !== undefined ? ' #'+(obj.userData.idx+1) : '';
+        vrPanel.draw(sym+idx2, obj.userData.lbl);
+        vrPanel.mesh.position.copy(hits[0].point).add(new THREE.Vector3(0,1.4,0));
+        vrPanel.mesh.lookAt(camera.getWorldPosition(new THREE.Vector3()));
+        vrPanel.mesh.visible = true;
+        obj.material.emissiveIntensity = 2.0;
+        setTimeout(function(){ obj.material.emissiveIntensity = obj.userData.origEmi||0.3; }, 900);
+      } else {
+        vrPanel.mesh.visible = false;
+      }
+    });
+    // GRIP held: rotate molecule by moving hand
+    ctrl.addEventListener('squeezestart', function(){ ctrlState[i].grip=true; });
+    ctrl.addEventListener('squeezeend',   function(){ ctrlState[i].grip=false; ctrlState[i].prevPos=null; });
+    // Grip model
+    var grip = renderer.xr.getControllerGrip(i);
+    xrRig.add(grip);
+  })(ci);
+}
 
 // ═══════════════════════════ LIGHTING ══════════════════════════════════════
 scene.add(new THREE.AmbientLight(0x220008, 0.9));
@@ -628,150 +738,83 @@ window.addEventListener('mousemove',e=>{
 });
 
 // ═══════════════════════════ WEBXR VR SUPPORT ══════════════════════════════
-const vrBtn=document.getElementById('vr-btn');
+var vrBtn = document.getElementById('vr-btn');
+var vrSession = null;
 
-// VR floating info panel (rendered in 3D space, visible in headset)
-const vrPanel = (function(){
-  const cv3=document.createElement('canvas'); cv3.width=512; cv3.height=256;
-  const ctx3=cv3.getContext('2d');
-  function draw(title,desc){
-    ctx3.clearRect(0,0,512,256);
-    ctx3.fillStyle='rgba(4,0,14,0.92)'; ctx3.fillRect(0,0,512,256);
-    ctx3.strokeStyle='rgba(255,50,80,0.7)'; ctx3.lineWidth=2; ctx3.strokeRect(2,2,508,252);
-    ctx3.fillStyle='#ff3355'; ctx3.font='bold 22px monospace'; ctx3.textAlign='center';
-    ctx3.fillText('BLOODSTREAM VR',256,34);
-    ctx3.fillStyle='rgba(255,100,130,0.6)'; ctx3.font='12px monospace';
-    ctx3.fillText('Penicillin G × PBP-2X',256,56);
-    ctx3.strokeStyle='rgba(255,50,80,0.35)'; ctx3.lineWidth=1;
-    ctx3.beginPath(); ctx3.moveTo(20,68); ctx3.lineTo(492,68); ctx3.stroke();
-    ctx3.fillStyle='#ffcc88'; ctx3.font='bold 15px monospace'; ctx3.textAlign='left';
-    ctx3.fillText(title,20,92);
-    ctx3.fillStyle='rgba(240,200,210,0.8)'; ctx3.font='11px monospace';
-    // Wrap desc text
-    const words=desc.split(' '); let line=''; let y=114;
-    words.forEach(w=>{ const test=line+w+' '; if(ctx3.measureText(test).width>470&&line!==''){ctx3.fillText(line.trim(),20,y);line=w+' ';y+=16;}else line=test;});
-    ctx3.fillText(line.trim(),20,y);
-    // Controls hint
-    ctx3.fillStyle='rgba(180,180,255,0.55)'; ctx3.font='10px monospace'; ctx3.textAlign='center';
-    ctx3.fillText('🎮 TRIGGER = select atom   GRIP = rotate   THUMBSTICK = zoom',256,234);
-    tex.needsUpdate=true;
-  }
-  const geo=new THREE.PlaneGeometry(4,2);
-  const tex=new THREE.CanvasTexture(cv3);
-  const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,side:THREE.DoubleSide});
-  const mesh=new THREE.Mesh(geo,mat);
-  mesh.visible=false;
-  scene.add(mesh);
-  return {mesh,draw};
-})();
-
-// VR Controller meshes (Quest controllers / generic)
-const controllers=[];
-const controllerLines=[];
-for(let i=0;i<2;i++){
-  const ctrl=renderer.xr.getController(i);
-  xrRig.add(ctrl);
-  // Controller body
-  const cGeo=new THREE.CylinderGeometry(0.02,0.035,0.14,12);
-  const cMat=new THREE.MeshStandardMaterial({color:0x222233,emissive:0x111122,roughness:0.4,metalness:0.7});
-  const cMesh=new THREE.Mesh(cGeo,cMat);
-  cMesh.rotation.x=Math.PI/2;
-  ctrl.add(cMesh);
-  // Trigger button indicator
-  const tGeo=new THREE.SphereGeometry(0.012,8,6);
-  const tMat=new THREE.MeshStandardMaterial({color:0xff3355,emissive:0xff3355,emissiveIntensity:0.5});
-  ctrl.add(new THREE.Mesh(tGeo,tMat));
-  // Ray line from controller
-  const lineGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,-8)]);
-  const lineMat=new THREE.LineBasicMaterial({color:0xff3355,transparent:true,opacity:0.5});
-  const line=new THREE.Line(lineGeo,lineMat);
-  ctrl.add(line);
-  controllers.push(ctrl);
-  controllerLines.push(line);
-  // Controller grip
-  const grip=renderer.xr.getControllerGrip(i);
-  xrRig.add(grip);
-}
-
-// Controller event handling — trigger to select atom, grip to rotate, thumbstick to zoom
-const ctrlState=[{trigger:false,grip:false,prevPos:null},{trigger:false,grip:false,prevPos:null}];
-
-controllers.forEach((ctrl,i)=>{
-  ctrl.addEventListener('selectstart',()=>{
-    ctrlState[i].trigger=true;
-    // Raycast from controller into scene
-    const tempMat=new THREE.Matrix4();
-    tempMat.identity().extractRotation(ctrl.matrixWorld);
-    const rayOrigin=new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
-    const rayDir=new THREE.Vector3(0,0,-1).applyMatrix4(tempMat);
-    ray.set(rayOrigin,rayDir);
-    const targets=[...atomMeshes,...pbpGroup.children.filter(c=>c.userData.lbl)];
-    const hits=ray.intersectObjects(targets);
-    if(hits.length&&hits[0].object.userData.lbl){
-      const obj=hits[0].object;
-      vrPanel.draw(
-        obj.userData.sym ? `${obj.userData.sym}${obj.userData.idx!==undefined?obj.userData.idx+1:''}` : 'Residue',
-        obj.userData.lbl
-      );
-      vrPanel.mesh.visible=true;
-      // Position panel in front of controller hit point, facing camera
-      vrPanel.mesh.position.copy(hits[0].point).add(new THREE.Vector3(0,1.5,0));
-      vrPanel.mesh.lookAt(camera.getWorldPosition(new THREE.Vector3()));
-      // Flash atom
-      obj.material.emissiveIntensity=2.0;
-      setTimeout(()=>{ obj.material.emissiveIntensity=obj.userData.origEmi||0.3; },800);
-    } else {
-      vrPanel.mesh.visible=false;
-    }
-  });
-  ctrl.addEventListener('selectend',()=>{ ctrlState[i].trigger=false; });
-  ctrl.addEventListener('squeezestart',()=>{ ctrlState[i].grip=true; });
-  ctrl.addEventListener('squeezeend',()=>{ ctrlState[i].grip=false; });
-});
-
-// Check XR support and show button
+// Detect environment and update button accordingly
 (async function checkXR(){
-  if(!navigator.xr) return;
+  vrBtn.style.display = 'block';
+  // Must be HTTPS
+  if(location.protocol !== 'https:' && location.hostname !== 'localhost'){
+    vrBtn.textContent = 'Needs HTTPS for VR';
+    vrBtn.style.borderColor='#ffaa00'; vrBtn.style.color='#ffaa00';
+    return;
+  }
+  // WebXR API must exist
+  if(!navigator.xr){
+    vrBtn.textContent = 'Open in Quest Browser';
+    vrBtn.style.borderColor='#ffaa00'; vrBtn.style.color='#ffaa00';
+    return;
+  }
   try{
-    const ok=await navigator.xr.isSessionSupported('immersive-vr');
-    if(ok){ vrBtn.style.display='block'; }
-    else {
-      vrBtn.style.display='block';
-      vrBtn.textContent='VR Not Supported';
-      vrBtn.style.opacity='0.5';
-      vrBtn.style.cursor='default';
+    var ok = await navigator.xr.isSessionSupported('immersive-vr');
+    if(ok){
+      vrBtn.textContent = 'Enter VR';
+      vrBtn.style.borderColor='#ff3355'; vrBtn.style.color='#ff3355';
+    } else {
+      vrBtn.textContent = 'VR Unavailable';
+      vrBtn.style.borderColor='#ffaa00'; vrBtn.style.color='#ffaa00';
     }
-  }catch(e){ console.warn('XR check failed:',e); }
+  } catch(e){
+    vrBtn.textContent = 'VR Check Failed';
+    vrBtn.style.borderColor='#ff6600'; vrBtn.style.color='#ff6600';
+  }
 })();
 
-let vrSession=null;
 async function enterVR(){
-  if(!navigator.xr){ alert('WebXR not available. Please use a VR browser (Meta Quest Browser, Chrome with VR headset connected).'); return; }
   if(vrSession){ vrSession.end(); return; }
+  if(location.protocol !== 'https:' && location.hostname !== 'localhost'){
+    alert('VR needs HTTPS.\n\nYour current URL: ' + location.href + '\n\nOpen this in your Quest Browser instead:\nhttps://abodiiiiiiii.github.io/penicillin-vr');
+    return;
+  }
+  if(!navigator.xr){
+    var ua = navigator.userAgent;
+    if(/OculusBrowser|Quest/i.test(ua)){
+      alert('WebXR not found in Quest Browser.\n\nFix:\n1. In Quest Browser type: chrome://flags\n2. Search: WebXR\n3. Enable WebXR Device API\n4. Tap Relaunch\n5. Come back and tap Enter VR');
+    } else {
+      alert('WebXR not available.\n\nYou are on a PC or phone browser.\n\nTo use VR:\n1. Put on your Meta Quest headset\n2. Open the Browser app inside the headset\n3. Go to: https://abodiiiiiiii.github.io/penicillin-vr\n4. Tap Enter VR');
+    }
+    return;
+  }
   try{
-    const s=await navigator.xr.requestSession('immersive-vr',{
-      requiredFeatures:['local-floor'],
-      optionalFeatures:['bounded-floor','hand-tracking','layers']
+    var ok = await navigator.xr.isSessionSupported('immersive-vr');
+    if(!ok){
+      alert('immersive-vr not supported.\n\nMake sure you are inside the Quest headset using the Quest Browser (not a PC browser).');
+      return;
+    }
+    // Note: do NOT request 'layers' feature - it conflicts with Three.js r128 baseLayer
+    var s = await navigator.xr.requestSession('immersive-vr',{
+      optionalFeatures: ['local-floor','bounded-floor','hand-tracking']
     });
-    vrSession=s;
+    vrSession = s;
+    // Tell Three.js which reference space to prefer
     renderer.xr.setReferenceSpaceType('local-floor');
+    // Let Three.js set up the WebGL layer on the session
     await renderer.xr.setSession(s);
-    vrBtn.textContent='🥽 Exit VR';
-    // Position rig so user is inside the vessel looking at the molecule
+    vrBtn.textContent = 'Exit VR';
     xrRig.position.set(0,0,18);
-    // Show VR panel hint
-    vrPanel.draw('Welcome to Bloodstream VR','Point your controller at any atom and pull the trigger to get details. Grip + move to rotate the molecule. You are inside a blood vessel.');
+    vrPanel.draw('Welcome to Bloodstream VR',
+      'Point your controller at any atom and pull the trigger to inspect it. Hold grip and move hand to rotate the molecule. You are inside a blood vessel.');
     vrPanel.mesh.position.set(0,1.2,14);
-    vrPanel.mesh.visible=true;
-    s.addEventListener('end',()=>{
-      vrSession=null;
-      vrBtn.textContent='🥽 Enter VR';
-      vrPanel.mesh.visible=false;
+    vrPanel.mesh.visible = true;
+    s.addEventListener('end', function(){
+      vrSession = null;
+      vrBtn.textContent = 'Enter VR';
+      vrPanel.mesh.visible = false;
       xrRig.position.set(0,0,22);
     });
-  }catch(e){
-    console.error('VR error:',e);
-    alert('Could not start VR: '+e.message+'\n\nMake sure:\n1. File is on HTTPS\n2. You are using Meta Quest Browser or Chrome with headset');
+  } catch(e){
+    alert('VR Error: ' + e.name + ': ' + e.message + '\n\nFix:\n1. Use Quest Browser INSIDE the headset\n2. URL must be HTTPS\n3. Try chrome://flags -> enable WebXR Device API');
   }
 }
 
@@ -809,26 +852,26 @@ function render(){
   fill.position.x=9*Math.cos(clk*0.22); fill.position.z=9*Math.sin(clk*0.22)+6;
   pbpL.intensity=2.5+Math.sin(clk*1.8)*0.7;
   core.intensity=1.5+Math.sin(clk*2.2)*0.5;
-  // Camera sway only in non-VR mode
+  // camera sway (inside vessel feel)
   if(!renderer.xr.isPresenting){
     camera.position.z=camZ;
     camera.position.y=Math.sin(clk*0.17)*0.5;
     camera.position.x=Math.cos(clk*0.21)*0.35;
   }
-  // VR controller grip-drag to rotate molecule
-  controllers.forEach((ctrl,i)=>{
-    if(ctrlState[i].grip && ctrl.matrixWorld){
-      const pos=new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
-      if(ctrlState[i].prevPos){
-        const delta=pos.clone().sub(ctrlState[i].prevPos);
-        rY+=delta.x*2.5;
-        rX+=delta.y*2.5;
+  // VR controller grip drag = rotate molecule
+  if(renderer.xr.isPresenting){
+    for(var gi=0; gi<controllers.length; gi++){
+      if(ctrlState[gi].grip){
+        var gpos = new THREE.Vector3().setFromMatrixPosition(controllers[gi].matrixWorld);
+        if(ctrlState[gi].prevPos){
+          var gd = gpos.clone().sub(ctrlState[gi].prevPos);
+          rY += gd.x * 2.8;
+          rX += gd.y * 2.8;
+        }
+        ctrlState[gi].prevPos = gpos.clone();
       }
-      ctrlState[i].prevPos=pos.clone();
-    } else {
-      ctrlState[i].prevPos=null;
     }
-  });
+  }
   renderer.render(scene,camera);
 }
 animate();
@@ -840,6 +883,20 @@ window.addEventListener('resize',()=>{
     renderer.setSize(innerWidth,innerHeight);
   }
 });
+
+// Show VR diagnostics in debug bar
+(function(){
+  var d = document.getElementById('vrdebug');
+  if(!d) return;
+  var https = location.protocol==='https:' || location.hostname==='localhost';
+  var hasXR = !!navigator.xr;
+  var ua = navigator.userAgent;
+  var isQuest = /OculusBrowser|Quest/i.test(ua);
+  d.innerHTML =
+    (https ? '<span style="color:#44ff88">HTTPS ok</span>' : '<span style="color:#ff4444">Not HTTPS</span>') + '<br>' +
+    (hasXR ? '<span style="color:#44ff88">WebXR found</span>' : '<span style="color:#ff4444">No WebXR API</span>') + '<br>' +
+    (isQuest ? '<span style="color:#44ff88">Quest Browser</span>' : '<span style="color:#ffaa44">Not Quest Browser</span>');
+})();
 
 // Hide loading
 setTimeout(()=>{
