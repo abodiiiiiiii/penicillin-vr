@@ -752,13 +752,6 @@ const pbpMat=new THREE.MeshStandardMaterial({
 pbpMat.emissive=new THREE.Color(0x220044);
 pbpGroup.add(new THREE.Mesh(pbpTube,pbpMat));
 
-// Active site pocket sphere — centred on active site in local coords
-const pock=new THREE.Mesh(
-  new THREE.SphereGeometry(2.5,20,16),
-  new THREE.MeshStandardMaterial({color:0xaa44ff,emissive:0x440088,emissiveIntensity:0.4,roughness:0.9,transparent:true,opacity:0.13,side:THREE.DoubleSide})
-);
-pock.position.set(-0.5,0.5,2.5); pbpGroup.add(pock);
-
 // Key residue markers (Ser, Lys, Thr near active site) — local coords (no +8)
 const KEY_RES=[
   {pos:[-1.8, 0.1,1.8],col:0xffaa00,lbl:'Ser370 Oγ — Nucleophile attacks β-lactam C7'},
@@ -776,36 +769,142 @@ KEY_RES.forEach(({pos,col,lbl})=>{
   tr.position.fromArray(pos); pbpGroup.add(tr);
 });
 
-// ═══════════════════════════ H-BONDS ═══════════════════════════════════════
+// ═══════════════════════════ INTERACTION FORCES ════════════════════════════
+// Each bond has: outer glow tube + inner bright core + traveling energy pulses
+// + pulsing halos at both endpoints + floating label at midpoint
 const hbGroup=new THREE.Group(); hbGroup.visible=false; sceneGroup.add(hbGroup);
-function dashedLine(a,b,col=0x00ccff){
-  const av=new THREE.Vector3(...a),bv=new THREE.Vector3(...b);
-  const segs=14;
-  for(let i=0;i<segs;i+=2){
-    const p0=av.clone().lerp(bv,i/segs), p1=av.clone().lerp(bv,(i+0.75)/segs);
-    const dir=p1.clone().sub(p0), len=dir.length();
-    const cg=new THREE.CylinderGeometry(0.045,0.045,len,6);
-    const cm=new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.7});
-    const mesh=new THREE.Mesh(cg,cm);
-    mesh.position.copy(p0).addScaledVector(dir.clone().normalize(),len/2);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
-    hbGroup.add(mesh);
-  }
+
+// Bond definitions: { from (pen atom idx), to (residue local pos), color, label, type }
+const BOND_DEFS = [
+  { atomIdx:4, res:[-1.8, 0.1, 1.8],  col:0x00ffee, colHex:'#00ffee', label:'Ser370\nH-bond 2.4Å',  type:'hbond' },
+  { atomIdx:2, res:[-2.5, 1.8, 2.8],  col:0xffcc00, colHex:'#ffcc00', label:'Lys373\nElectrostatic 2.7Å', type:'elec'  },
+  { atomIdx:3, res:[-2.2,-1.8, 2.2],  col:0x44ff88, colHex:'#44ff88', label:'Thr394\nH-bond 2.8Å',  type:'hbond' },
+  { atomIdx:7, res:[-1.8, 0.1, 1.8],  col:0xff8800, colHex:'#ff8800', label:'Ser370\nCovalent attack', type:'coval' },
+];
+
+// Per-bond traveling pulse objects
+const bondPulses = []; // [{mesh, t, speed, bondIdx}]
+// Per-bond endpoint halo pairs
+const bondHalos = [];  // [{meshA, meshB, bondIdx}]
+// Per-bond label sprites
+const bondLabels = [];
+
+// Colors per type
+const TYPE_COL = { hbond:0x00ffee, elec:0xffcc00, coval:0xff6600 };
+
+function makeBondTube(a, b, radius, col, opacity, transparent){
+  const dir = b.clone().sub(a);
+  const len = dir.length();
+  if(len < 0.01) return null;
+  const g = new THREE.CylinderGeometry(radius, radius, len, 10, 1);
+  const m = new THREE.MeshBasicMaterial({ color:col, transparent:true, opacity:opacity });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.copy(a).addScaledVector(dir.clone().normalize(), len/2);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize());
+  return mesh;
 }
-// H-bonds from penicillin atoms to PBP residues — rebuilt per stage so they're accurate
-// PBP residue positions are in pbpGroup LOCAL space; we add pbpOffsetX to convert to world.
-// Penicillin atom positions are in molGroup (= world, since molGroup stays at origin).
+
+function makePulse(col){
+  const g = new THREE.SphereGeometry(0.13, 10, 8);
+  const m = new THREE.MeshBasicMaterial({ color:col, transparent:true, opacity:0.95 });
+  return new THREE.Mesh(g, m);
+}
+
+function makeHalo(radius, col){
+  const g = new THREE.SphereGeometry(radius*2.2, 14, 10);
+  const m = new THREE.MeshBasicMaterial({ color:col, transparent:true, opacity:0.18, side:THREE.BackSide });
+  return new THREE.Mesh(g, m);
+}
+
+function makeBondLabel(text, col){
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 80;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0,0,256,80);
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.roundRect ? ctx.roundRect(2,2,252,76,10) : ctx.fillRect(2,2,252,76);
+  ctx.fill();
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2;
+  ctx.roundRect ? ctx.roundRect(2,2,252,76,10) : ctx.strokeRect(2,2,252,76);
+  ctx.stroke();
+  ctx.fillStyle = col;
+  ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'center';
+  const lines = text.split('\n');
+  lines.forEach((ln, i) => ctx.fillText(ln, 128, 28 + i*26));
+  const tex = new THREE.CanvasTexture(cv);
+  const mat = new THREE.SpriteMaterial({ map:tex, transparent:true, opacity:0.92, depthWrite:false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(1.8, 0.56, 1);
+  return sprite;
+}
+
 function rebuildHBonds(pbpOffsetX){
+  // Clear everything
   while(hbGroup.children.length) hbGroup.remove(hbGroup.children[0]);
-  const a4=PEN_ATOMS[4], a2=PEN_ATOMS[2], a3=PEN_ATOMS[3], a7=PEN_ATOMS[7];
-  // PBP residue world X = local X + pbpOffsetX (local positions updated above: Ser=-1.8, Lys=-2.5, Thr=-2.2)
-  var ser  = [-1.8+pbpOffsetX,  0.1, 1.8];
-  var lys  = [-2.5+pbpOffsetX,  1.8, 2.8];
-  var thr  = [-2.2+pbpOffsetX, -1.8, 2.2];
-  dashedLine([a4.x,a4.y,a4.z], ser,  0x00ffcc);
-  dashedLine([a2.x,a2.y,a2.z], lys,  0x00ccff);
-  dashedLine([a3.x,a3.y,a3.z], thr,  0x00ff88);
-  dashedLine([a7.x,a7.y,a7.z], ser,  0xffaa00);
+  bondPulses.length = 0;
+  bondHalos.length = 0;
+  bondLabels.length = 0;
+
+  BOND_DEFS.forEach(function(bd, bi){
+    const penAtom = PEN_ATOMS[bd.atomIdx];
+    const A = new THREE.Vector3(penAtom.x, penAtom.y, penAtom.z);
+    const B = new THREE.Vector3(bd.res[0] + pbpOffsetX, bd.res[1], bd.res[2]);
+
+    // ── Outer glow tube (thick, low opacity) ─────────────────────────────
+    const outer = makeBondTube(A, B, 0.10, bd.col, 0.18, true);
+    if(outer){ outer.userData.isBondGlow=true; hbGroup.add(outer); }
+
+    // ── Mid glow tube ─────────────────────────────────────────────────────
+    const mid = makeBondTube(A, B, 0.055, bd.col, 0.45, true);
+    if(mid){ hbGroup.add(mid); }
+
+    // ── Inner bright core ─────────────────────────────────────────────────
+    const inner = makeBondTube(A, B, 0.022, 0xffffff, 0.85, true);
+    if(inner){ hbGroup.add(inner); }
+
+    // ── Dashed segments (keep the scientific look) ────────────────────────
+    const segs = 10;
+    for(let i=0; i<segs; i+=2){
+      const p0 = A.clone().lerp(B, i/segs);
+      const p1 = A.clone().lerp(B, (i+0.55)/segs);
+      const dir = p1.clone().sub(p0); const len = dir.length();
+      const dash = makeBondTube(p0, p1, 0.035, 0xffffff, 0.6, true);
+      if(dash) hbGroup.add(dash);
+    }
+
+    // ── 3 traveling energy pulses per bond ───────────────────────────────
+    for(let p=0; p<3; p++){
+      const pulse = makePulse(bd.col);
+      // Add an outer glow sphere around each pulse
+      const glow = new THREE.Mesh(
+        new THREE.SphereGeometry(0.22, 10, 8),
+        new THREE.MeshBasicMaterial({ color:bd.col, transparent:true, opacity:0.35, side:THREE.BackSide })
+      );
+      pulse.add(glow);
+      hbGroup.add(pulse);
+      bondPulses.push({ mesh:pulse, t:(p/3), speed:0.004 + bi*0.0008, A:A.clone(), B:B.clone(), col:bd.col });
+    }
+
+    // ── Endpoint halos ────────────────────────────────────────────────────
+    const atomR = PEN_ATOMS[bd.atomIdx].s === 'H' ? 0.18 : 0.3;
+    const haloA = makeHalo(atomR, bd.col);
+    haloA.position.copy(A);
+    hbGroup.add(haloA);
+
+    const haloB = makeHalo(0.35, bd.col);
+    haloB.position.copy(B);
+    hbGroup.add(haloB);
+
+    bondHalos.push({ meshA:haloA, meshB:haloB, phase: bi * Math.PI * 0.5 });
+
+    // ── Midpoint label ─────────────────────────────────────────────────────
+    const lbl = makeBondLabel(bd.label, bd.colHex);
+    lbl.position.copy(A).lerp(B, 0.5).add(new THREE.Vector3(0, 0.65, 0));
+    hbGroup.add(lbl);
+    bondLabels.push(lbl);
+  });
 }
 rebuildHBonds(18);
 
@@ -1093,6 +1192,12 @@ function goStage(n){
   document.getElementById('s-title').textContent=s.title;
   document.getElementById('s-desc').textContent=s.desc;
   setBar('m1','v1',s.b); setBar('m2','v2',s.a); setBar('m3','v3',s.i);
+
+  // In VR: always lock view to face the molecular scene so docking is visible
+  if(renderer.xr.isPresenting){
+    state.rot = false;
+    rY = 0; rX = 0;
+  }
 
   // PBP + H-bond visibility
   if(s.pbp&&!pbpGroup.visible){ pbpGroup.visible=true; state.pbp=true; var ep=document.getElementById('b-pbp'); if(ep)ep.classList.add('on'); }
@@ -1554,7 +1659,15 @@ async function enterVR(){
     // Let Three.js set up the WebGL layer on the session
     await renderer.xr.setSession(s);
     vrBtn.textContent = 'Exit VR';
-    xrRig.position.set(0,0,18);
+    // Position player to face the molecular scene head-on
+    // sceneGroup is at world origin; player at z=6 looks toward origin (z=0)
+    // rY=0 means PBP approaches along +X (to the right of center) — set rY so it faces camera
+    xrRig.position.set(0, 1.2, 8);
+    rX = 0;
+    rY = 0; // PBP slides from right to centre — perfectly visible at z=8 looking toward z=0
+    state.rot = false; // stop auto-rotation so docking is always visible
+    var bRotBtn = document.getElementById('b-rot');
+    if(bRotBtn) bRotBtn.classList.remove('on');
     vrPanel.draw('Welcome to Bloodstream VR',
       'Point your controller at any atom and pull the trigger to inspect it. Hold grip and move hand to rotate the molecule. You are inside a blood vessel.');
     vrPanel.mesh.position.set(0,1.2,14);
@@ -1587,7 +1700,7 @@ function animate(){
 }
 function render(){
   clk+=0.011;
-  if(state.rot&&!isDrag) rY+=0.004;
+  if(state.rot && !isDrag && !renderer.xr.isPresenting) rY+=0.004;
   sceneGroup.rotation.x=rX; sceneGroup.rotation.y=rY;
   lblGroup.children.forEach(l=>l.quaternion.copy(camera.quaternion));
   // molGroup floats at origin (stage positioning is now handled by pbpGroup.position.x)
@@ -1610,6 +1723,30 @@ function render(){
   // β-ring pulse
   blRing.rotation.y+=0.013;
   blRing.material.opacity=0.45+0.25*Math.sin(clk*2.4);
+  // ── Interaction force animations ─────────────────────────────────────────
+  if(hbGroup.visible){
+    // Traveling energy pulses along each bond
+    bondPulses.forEach(function(p){
+      p.t = (p.t + p.speed) % 1.0;
+      p.mesh.position.lerpVectors(p.A, p.B, p.t);
+      // Pulse brightness: brightest at midpoint
+      const brightness = 0.5 + 0.5*Math.sin(p.t * Math.PI);
+      p.mesh.material.opacity = 0.6 + brightness*0.4;
+      p.mesh.scale.setScalar(0.7 + brightness*0.7);
+    });
+    // Pulsing endpoint halos
+    bondHalos.forEach(function(h, i){
+      const pulse = 0.55 + 0.45*Math.sin(clk*3.2 + h.phase);
+      h.meshA.material.opacity = pulse * 0.22;
+      h.meshA.scale.setScalar(0.85 + pulse*0.35);
+      h.meshB.material.opacity = pulse * 0.28;
+      h.meshB.scale.setScalar(0.85 + pulse*0.35);
+    });
+    // Outer glow tubes breathe in opacity
+    hbGroup.children.forEach(function(c){
+      if(c.userData.isBondGlow) c.material.opacity = 0.10 + 0.10*Math.sin(clk*2.5);
+    });
+  }
   // ── Stage 6: breaking PGN strands drift ──────────────────────────────────
   if(degradeAnimating && bacteriaGroup.visible){
     bactRefs.pgn_strands.forEach(m=>{
