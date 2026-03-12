@@ -77,13 +77,18 @@ canvas{display:block;position:fixed;inset:0;width:100%!important;height:100%!imp
   text-transform:uppercase;color:rgba(240,192,208,.5)}
 .ld{width:8px;height:8px;border-radius:50%}
 /* TOOLTIP */
-#tip{position:absolute;background:rgba(4,0,10,.95);border:1px solid #ffaa55;
-  border-radius:4px;padding:8px 12px;pointer-events:none;display:none;
-  box-shadow:0 0 16px rgba(255,170,85,.3);max-width:200px}
-#tip .tn{color:#ffaa55;font-family:'Rajdhani',sans-serif;font-size:13px;font-weight:700;margin-bottom:2px}
-#tip .ti{color:rgba(240,192,208,.75);line-height:1.6;font-size:9px}
+#tip{position:absolute;background:rgba(4,0,12,.93);border:1px solid rgba(255,170,85,.4);
+  border-radius:4px;padding:7px 11px;pointer-events:none;display:none;z-index:50;white-space:nowrap}
+#tip .tn{color:#ffcc55;font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:700;letter-spacing:1px}
+#tip .ti{font-size:10px;margin-top:3px;padding:2px 6px;border-radius:2px;font-family:'Share Tech Mono',monospace}
+#tip .ti.hbond{color:#00ffee;border-left:2px solid #00ffee}
+#tip .ti.elec {color:#ffcc00;border-left:2px solid #ffcc00}
+#tip .ti.coval{color:#ff8833;border-left:2px solid #ff8833}
+#tip .ti.vdw  {color:#9999ff;border-left:2px solid #9999ff}
+#tip .ti.break{color:#ff4444;border-left:2px solid #ff4444}
+#tip .ti.none {color:rgba(200,180,190,.3);border-left:2px solid rgba(200,180,190,.15)}
 /* STAGE INFO */
-#sinfo{position:absolute;bottom:80px;left:14px;width:255px}
+#sinfo{position:absolute;bottom:80px;left:276px;width:248px}
 #sinfo .stitle{font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700;color:#fff;margin-bottom:4px}
 #sinfo .sdesc{font-size:9px;line-height:1.8;color:rgba(240,192,208,.62)}
 /* CORNERS */
@@ -102,6 +107,34 @@ canvas{display:block;position:fixed;inset:0;width:100%!important;height:100%!imp
 /* CROSSHAIR */
 #xhair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   width:20px;height:20px;pointer-events:none;opacity:.4}
+/* INTERACTIONS LOG */
+#ilog{position:absolute;top:60px;left:14px;width:248px;max-height:calc(100vh - 160px);display:flex;flex-direction:column;}
+#ilog .ilog-body{overflow-y:auto;flex:1;scrollbar-width:thin;scrollbar-color:rgba(255,50,80,.3) transparent;padding-right:2px;}
+#ilog .ilog-body::-webkit-scrollbar{width:3px;}
+#ilog .ilog-body::-webkit-scrollbar-thumb{background:rgba(255,50,80,.35);border-radius:2px;}
+.ientry{padding:7px 9px;margin-bottom:5px;border-radius:3px;border-left:2px solid;font-size:8.5px;line-height:1.65;animation:ifade .35s ease;}
+@keyframes ifade{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
+.ientry.hbond{border-color:#00ffee;background:rgba(0,255,238,.06);}
+.ientry.elec{border-color:#ffcc00;background:rgba(255,204,0,.06);}
+.ientry.coval{border-color:#ff6600;background:rgba(255,102,0,.06);}
+.ientry.info{border-color:#cc77ff;background:rgba(204,119,255,.06);}
+.ientry.warn{border-color:#ff4444;background:rgba(255,68,68,.06);}
+.ientry .ie-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;}
+.ientry .ie-type{font-size:7px;letter-spacing:1.5px;text-transform:uppercase;font-weight:bold;padding:1px 5px;border-radius:10px;}
+.ientry.hbond .ie-type{color:#00ffee;background:rgba(0,255,238,.12);}
+.ientry.elec  .ie-type{color:#ffcc00;background:rgba(255,204,0,.12);}
+.ientry.coval .ie-type{color:#ff8833;background:rgba(255,102,0,.12);}
+.ientry.info  .ie-type{color:#cc77ff;background:rgba(204,119,255,.12);}
+.ientry.warn  .ie-type{color:#ff6666;background:rgba(255,68,68,.12);}
+.ientry .ie-time{font-size:7px;color:rgba(240,192,208,.28);letter-spacing:.5px;}
+.ientry .ie-atoms{color:#ffddcc;font-weight:bold;margin-bottom:2px;font-size:8px;}
+.ientry .ie-desc{color:rgba(240,192,208,.58);font-size:8px;}
+.ientry .ie-val{display:inline-block;margin-top:2px;font-size:7.5px;color:rgba(255,240,200,.7);letter-spacing:.5px;}
+#ilog-toggle{cursor:pointer;display:flex;align-items:center;justify-content:space-between;pointer-events:all;}
+#ilog-toggle .itoggle-arrow{font-size:9px;transition:transform .2s;color:#ff3355;}
+#ilog-toggle.collapsed .itoggle-arrow{transform:rotate(-90deg);}
+#ilog-count{display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;font-size:8px;border-radius:8px;background:rgba(255,50,80,.25);color:#ff3355;padding:0 4px;font-weight:bold;}
+#ilog-live{display:inline-block;width:5px;height:5px;border-radius:50%;background:#ff3355;box-shadow:0 0 6px #ff3355;animation:bl 1.5s ease infinite;margin-left:5px;vertical-align:middle;}
 #xhair::before,#xhair::after{content:'';position:absolute;background:#ff3355}
 #xhair::before{width:2px;height:100%;left:50%;transform:translateX(-50%)}
 #xhair::after{width:100%;height:2px;top:50%;transform:translateY(-50%)}
@@ -132,6 +165,18 @@ canvas{display:block;position:fixed;inset:0;width:100%!important;height:100%!imp
     <div class="li"><div class="ld" style="background:#cccccc"></div>H</div>
     <div class="li"><div class="ld" style="background:#33ee77"></div>β-Lactam</div>
     <div class="li"><div class="ld" style="background:#cc77ff"></div>PBP Chain</div>
+  </div>
+
+  <!-- INTERACTION LOG PANEL -->
+  <div id="ilog" class="pnl">
+    <div class="ph" id="ilog-toggle" onclick="toggleILog()">
+      <span>// Atomic Interactions <span id="ilog-live"></span></span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <span id="ilog-count">0</span>
+        <span class="itoggle-arrow">▾</span>
+      </span>
+    </div>
+    <div class="ilog-body" id="ilog-body"></div>
   </div>
   <div id="rp" class="pnl">
     <div class="ph">// View Controls</div>
@@ -173,7 +218,10 @@ canvas{display:block;position:fixed;inset:0;width:100%!important;height:100%!imp
   </div>
   <div id="vrdebug"></div>
   <button id="vr-btn" onclick="enterVR()">🥽 Enter VR</button>
-  <div id="tip"><div class="tn" id="t-name"></div><div class="ti" id="t-info"></div></div>
+  <div id="tip">
+    <div class="tn" id="t-name"></div>
+    <div class="ti" id="t-info"></div>
+  </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -230,9 +278,8 @@ const ACOL = {S:0xeecc00, O:0xee3333, N:0x3377ff, C:0xaab0cc, H:0xcccccc};
 const ARAD = {S:0.72, O:0.55, N:0.58, C:0.52, H:0.28};
 const AEMI = {S:0.7,  O:0.55, N:0.45, C:0.2,  H:0.1};
 
-// Identify β-lactam atoms by index (from SDF: atom indices 0=S, 6=N, 8=C, 10=C, 11=C, 12=C, 15=C)
-// β-lactam ring indices: N(6), C(8), C(11), C(12) form the bicyclic + C(10),C(15) thiazolidine
-// From bond analysis: ring atoms 0,6,8,9,10,11,12,15 form bicyclic core
+// β-lactam bicyclic core atom indices (verified from bond topology):
+// S1(0), N1-bridgehead(6), C5(8), C3-thiazolidine(9), C4(10), C6(11), C7-carbonyl(12), C2-carboxylate(15)
 const BETA_ATOMS = new Set([0,6,8,9,10,11,12,15]);
 const BETA_BONDS = new Set(); // filled below
 
@@ -598,16 +645,6 @@ const RBCS=[[-20,4,-5,.5,.3,.1,1.5],[-13,-3,3,.4,1.2,.2,1.7],[-7,6,-4,.9,.6,.3,1
 [13,6,-2,.3,.7,.4,1.6],[-15,-5,4,.6,.5,.7,1.8],[1,7,-6,.9,.8,.2,1.5],[17,-3,5,.4,.6,.9,1.7]];
 RBCS.forEach(r=>makeRBC(...r));
 
-// Plasma particles
-const plGeo = new THREE.BufferGeometry();
-const plN=700, plPos=new Float32Array(plN*3), plPh=new Float32Array(plN);
-for(let i=0;i<plN;i++){
-  const a=Math.random()*Math.PI*2, r=3+Math.random()*16;
-  plPos[i*3]=(Math.random()-0.5)*100; plPos[i*3+1]=r*Math.sin(a); plPos[i*3+2]=r*Math.cos(a);
-  plPh[i]=Math.random()*Math.PI*2;
-}
-plGeo.setAttribute('position',new THREE.BufferAttribute(plPos,3));
-scene.add(new THREE.Points(plGeo,new THREE.PointsMaterial({color:0xff9977,size:0.13,transparent:true,opacity:0.5})));
 
 // Platelets
 for(let i=0;i<22;i++){
@@ -635,7 +672,36 @@ PEN_BONDS.forEach(([a,b,o])=>{
   if(BETA_ATOMS.has(a)&&BETA_ATOMS.has(b)) BETA_BONDS.add(`${a}-${b}`);
 });
 
-// Build atoms
+// Atom labels: name = "atom# symbol", interaction = short tag or null
+const IUPAC_NAMES = {
+  0:  {name:'1  S',   interaction: null},
+  1:  {name:'2  O',   interaction: 'H-bond → Ser370'},
+  2:  {name:'3  O',   interaction: 'Electrostatic → Lys373'},
+  3:  {name:'4  O',   interaction: 'H-bond → Thr394'},
+  4:  {name:'5  O',   interaction: null},
+  5:  {name:'6  O',   interaction: null},
+  6:  {name:'7  N',   interaction: 'Bond breaks (N1–C7)'},
+  7:  {name:'8  N',   interaction: 'H-bond → backbone'},
+  8:  {name:'9  C',   interaction: null},
+  9:  {name:'10  C',  interaction: null},
+  10: {name:'11  C',  interaction: null},
+  11: {name:'12  C',  interaction: null},
+  12: {name:'13  C',  interaction: 'Covalent ← Ser370'},
+  13: {name:'14  C',  interaction: 'vdW → hydrophobic pocket'},
+  14: {name:'15  C',  interaction: 'vdW → hydrophobic pocket'},
+  15: {name:'16  C',  interaction: null},
+  16: {name:'17  C',  interaction: null},
+  17: {name:'18  C',  interaction: null},
+  18: {name:'19  C',  interaction: 'vdW → hydrophobic pocket'},
+  19: {name:'20  C',  interaction: null},
+  20: {name:'21  C',  interaction: null},
+  21: {name:'22  C',  interaction: null},
+  22: {name:'23  C',  interaction: null},
+  23: {name:'24  C',  interaction: null},
+};
+for(let hi=24;hi<=41;hi++){
+  IUPAC_NAMES[hi]={name:`${hi+1}  H`, interaction: null};
+}
 PEN_ATOMS.forEach(at=>{
   const isBeta = BETA_ATOMS.has(at.i);
   const col = isBeta ? 0x33ee77 : (ACOL[at.s]||0x999999);
@@ -648,12 +714,11 @@ PEN_ATOMS.forEach(at=>{
   });
   const mesh = new THREE.Mesh(geo,mat);
   mesh.position.set(at.x,at.y,at.z);
+  const iupac = IUPAC_NAMES[at.i] || {name:`${at.i+1}  ${at.s}`, interaction:null};
   mesh.userData = {idx:at.i, sym:at.s, isBeta, origEmi:emi, origScale:1.0,
-    lbl: isBeta ? `${at.s}${at.i+1} — β-Lactam / Thiazolidine core` :
-         at.s==='S' ? 'S1 — Thiazolidine sulfur (bicyclic core)' :
-         at.s==='O' ? `O${at.i+1} — ${at.i===1?'Amide C=O':at.i===2||at.i===3?'Carboxylate O⁻':at.i===4?'β-Lactam C=O (reactive)':'Ester O'}` :
-         at.s==='N' ? `N${at.i+1} — ${at.i===6?'Bridgehead N (bicyclic)':'Amide N-H'}` :
-         `${at.s}${at.i+1}`};
+    iupacName: iupac.name,
+    interaction: iupac.interaction,
+    lbl: iupac.name};
   atomGroup.add(mesh);
   atomMeshes.push(mesh);
   mesh.castShadow=true;
@@ -721,7 +786,8 @@ function makeLbl(txt,pos){
   m.position.fromArray(pos).y+=0.8;
   return m;
 }
-[{i:0,n:'S1'},{i:4,n:'O(C=O)'},{i:6,n:'N-Bridge'},{i:7,n:'N-Amide'}].forEach(({i,n})=>{
+// Key atom labels: S1, O(C7=O), N1-bridgehead, N2(NH), C7-carbonyl
+[{i:0,n:'S1'},{i:1,n:'O(C7=O)'},{i:6,n:'N1'},{i:7,n:'N2(NH)'},{i:12,n:'C7'}].forEach(({i,n})=>{
   const a=PEN_ATOMS[i];
   lblGroup.add(makeLbl(n,[a.x,a.y,a.z]));
 });
@@ -746,11 +812,60 @@ for(let i=0;i<posAttr.count;i++){
 }
 pbpTube.setAttribute('color',new THREE.BufferAttribute(colArr,3));
 const pbpMat=new THREE.MeshStandardMaterial({
-  vertexColors:true,emissiveIntensity:0.35,
-  roughness:0.45,metalness:0.2,transparent:true,opacity:0.82
+  vertexColors:true,emissiveIntensity:0.2,
+  roughness:0.55,metalness:0.1,transparent:true,opacity:0.32
 });
 pbpMat.emissive=new THREE.Color(0x220044);
 pbpGroup.add(new THREE.Mesh(pbpTube,pbpMat));
+
+// ── Active-site pocket — glowing cavity so binding spot is clearly visible ──
+// Centroid of the four key residues
+const activeSitePos = new THREE.Vector3(-2.1, 0.75, 2.3);
+
+// Outer soft glow shell (large, very transparent)
+const pocketGlowMat = new THREE.MeshBasicMaterial({
+  color:0xffaa00, transparent:true, opacity:0.07, side:THREE.BackSide, depthWrite:false
+});
+pbpGroup.add(new THREE.Mesh(new THREE.SphereGeometry(2.2,24,18), pocketGlowMat).position.copy(activeSitePos) && (() => {
+  const m=new THREE.Mesh(new THREE.SphereGeometry(2.2,24,18),pocketGlowMat);
+  m.position.copy(activeSitePos); return m;
+})());
+
+// Mid glow ring (pulsing torus around pocket entrance)
+const pocketRingMat = new THREE.MeshBasicMaterial({color:0xffcc44,transparent:true,opacity:0.55});
+const pocketRing = new THREE.Mesh(new THREE.TorusGeometry(1.5,0.06,8,48),pocketRingMat);
+pocketRing.position.copy(activeSitePos);
+pocketRing.rotation.x=Math.PI/3; pocketRing.rotation.z=Math.PI/6;
+pocketRing.userData.isPocketRing=true;
+pbpGroup.add(pocketRing);
+
+// Inner core indicator
+const pocketCoreMat = new THREE.MeshBasicMaterial({color:0xffee88,transparent:true,opacity:0.0});
+const pocketCore = new THREE.Mesh(new THREE.SphereGeometry(0.28,16,12),pocketCoreMat);
+pocketCore.position.copy(activeSitePos);
+pocketCore.userData.isPocketCore=true;
+pbpGroup.add(pocketCore);
+
+// "ACTIVE SITE" floating label above pocket
+const asCv=document.createElement('canvas'); asCv.width=256; asCv.height=64;
+const asCtx=asCv.getContext('2d');
+asCtx.fillStyle='rgba(0,0,0,0.0)';
+asCtx.fillRect(0,0,256,64);
+asCtx.strokeStyle='rgba(255,200,60,0.85)'; asCtx.lineWidth=1.5;
+if(asCtx.roundRect) asCtx.roundRect(2,2,252,60,6); else asCtx.rect(2,2,252,60);
+asCtx.stroke();
+asCtx.fillStyle='#ffcc44'; asCtx.font='bold 15px monospace';
+asCtx.textAlign='center'; asCtx.textBaseline='middle';
+asCtx.fillText('⬡ ACTIVE SITE', 128, 22);
+asCtx.fillStyle='rgba(255,210,120,0.65)'; asCtx.font='10px monospace';
+asCtx.fillText('Ser370 · Lys373 · Thr394', 128, 44);
+const asLabel = new THREE.Mesh(
+  new THREE.PlaneGeometry(2.2,0.55),
+  new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(asCv),transparent:true,depthWrite:false,side:THREE.DoubleSide})
+);
+asLabel.position.copy(activeSitePos).y += 2.0;
+asLabel.userData.isActiveSiteLabel=true;
+pbpGroup.add(asLabel);
 
 // Key residue markers (Ser, Lys, Thr near active site) — local coords (no +8)
 const KEY_RES=[
@@ -774,12 +889,16 @@ KEY_RES.forEach(({pos,col,lbl})=>{
 // + pulsing halos at both endpoints + floating label at midpoint
 const hbGroup=new THREE.Group(); hbGroup.visible=false; sceneGroup.add(hbGroup);
 
-// Bond definitions: { from (pen atom idx), to (residue local pos), color, label, type }
+// Bond definitions using topology-verified atom indices:
+//  idx 1  = O(C7=O)   → H-bonds Ser370 oxyanion hole
+//  idx 2  = O2(COO⁻)  → electrostatic to Lys373
+//  idx 3  = O3(COO⁻)  → H-bond to Thr394
+//  idx 12 = C7        → covalent attack by Ser370
 const BOND_DEFS = [
-  { atomIdx:4, res:[-1.8, 0.1, 1.8],  col:0x00ffee, colHex:'#00ffee', label:'Ser370\nH-bond 2.4Å',  type:'hbond' },
-  { atomIdx:2, res:[-2.5, 1.8, 2.8],  col:0xffcc00, colHex:'#ffcc00', label:'Lys373\nElectrostatic 2.7Å', type:'elec'  },
-  { atomIdx:3, res:[-2.2,-1.8, 2.2],  col:0x44ff88, colHex:'#44ff88', label:'Thr394\nH-bond 2.8Å',  type:'hbond' },
-  { atomIdx:7, res:[-1.8, 0.1, 1.8],  col:0xff8800, colHex:'#ff8800', label:'Ser370\nCovalent attack', type:'coval' },
+  { atomIdx:1,  res:[-1.8, 0.1, 1.8],  col:0x00ffee, colHex:'#00ffee', label:'Ser370\nOxyanion hole 2.6Å', type:'hbond' },
+  { atomIdx:2,  res:[-2.5, 1.8, 2.8],  col:0xffcc00, colHex:'#ffcc00', label:'Lys373\nElectrostatic 2.7Å', type:'elec'  },
+  { atomIdx:3,  res:[-2.2,-1.8, 2.2],  col:0x44ff88, colHex:'#44ff88', label:'Thr394\nH-bond 2.8Å',        type:'hbond' },
+  { atomIdx:12, res:[-1.8, 0.1, 1.8],  col:0xff8800, colHex:'#ff8800', label:'Ser370\nCovalent attack C7', type:'coval' },
 ];
 
 // Per-bond traveling pulse objects
@@ -847,64 +966,141 @@ function rebuildHBonds(pbpOffsetX){
   bondHalos.length = 0;
   bondLabels.length = 0;
 
+  // Store PBP residue world positions by matching KEY_RES index to BOND_DEFS res coords
+  // We'll resolve positions at draw-time using actual mesh world positions
+
   BOND_DEFS.forEach(function(bd, bi){
-    const penAtom = PEN_ATOMS[bd.atomIdx];
-    const A = new THREE.Vector3(penAtom.x, penAtom.y, penAtom.z);
-    const B = new THREE.Vector3(bd.res[0] + pbpOffsetX, bd.res[1], bd.res[2]);
+    // ── Build geometry containers (empty Groups — positions updated each frame) ──
+    const bondGroup2 = new THREE.Group(); bondGroup2.userData.bondIdx=bi; hbGroup.add(bondGroup2);
 
-    // ── Outer glow tube (thick, low opacity) ─────────────────────────────
-    const outer = makeBondTube(A, B, 0.10, bd.col, 0.18, true);
-    if(outer){ outer.userData.isBondGlow=true; hbGroup.add(outer); }
+    const outer = makeBondTube(new THREE.Vector3(), new THREE.Vector3(0,0.001,0), 0.10, bd.col, 0.18, true);
+    if(outer){ outer.userData.isBondGlow=true; outer.userData.isDynamic=true; outer.userData.bondIdx=bi; hbGroup.add(outer); }
 
-    // ── Mid glow tube ─────────────────────────────────────────────────────
-    const mid = makeBondTube(A, B, 0.055, bd.col, 0.45, true);
-    if(mid){ hbGroup.add(mid); }
+    const mid = makeBondTube(new THREE.Vector3(), new THREE.Vector3(0,0.001,0), 0.055, bd.col, 0.45, true);
+    if(mid){ mid.userData.isDynamic=true; mid.userData.bondIdx=bi; hbGroup.add(mid); }
 
-    // ── Inner bright core ─────────────────────────────────────────────────
-    const inner = makeBondTube(A, B, 0.022, 0xffffff, 0.85, true);
-    if(inner){ hbGroup.add(inner); }
+    const inner = makeBondTube(new THREE.Vector3(), new THREE.Vector3(0,0.001,0), 0.022, 0xffffff, 0.85, true);
+    if(inner){ inner.userData.isDynamic=true; inner.userData.bondIdx=bi; hbGroup.add(inner); }
 
-    // ── Dashed segments (keep the scientific look) ────────────────────────
-    const segs = 10;
-    for(let i=0; i<segs; i+=2){
-      const p0 = A.clone().lerp(B, i/segs);
-      const p1 = A.clone().lerp(B, (i+0.55)/segs);
-      const dir = p1.clone().sub(p0); const len = dir.length();
-      const dash = makeBondTube(p0, p1, 0.035, 0xffffff, 0.6, true);
-      if(dash) hbGroup.add(dash);
+    // Dashes
+    for(let i=0; i<10; i+=2){
+      const dash = makeBondTube(new THREE.Vector3(), new THREE.Vector3(0,0.001,0), 0.035, 0xffffff, 0.6, true);
+      if(dash){ dash.userData.isDynamic=true; dash.userData.bondIdx=bi; dash.userData.dashFrac={t0:i/10,t1:(i+0.55)/10}; hbGroup.add(dash); }
     }
 
-    // ── 3 traveling energy pulses per bond ───────────────────────────────
+    // Pulses
     for(let p=0; p<3; p++){
       const pulse = makePulse(bd.col);
-      // Add an outer glow sphere around each pulse
       const glow = new THREE.Mesh(
         new THREE.SphereGeometry(0.22, 10, 8),
         new THREE.MeshBasicMaterial({ color:bd.col, transparent:true, opacity:0.35, side:THREE.BackSide })
       );
       pulse.add(glow);
       hbGroup.add(pulse);
-      bondPulses.push({ mesh:pulse, t:(p/3), speed:0.004 + bi*0.0008, A:A.clone(), B:B.clone(), col:bd.col });
+      bondPulses.push({ mesh:pulse, t:(p/3), speed:0.004 + bi*0.0008, bondIdx:bi });
     }
 
-    // ── Endpoint halos ────────────────────────────────────────────────────
+    // Halos
     const atomR = PEN_ATOMS[bd.atomIdx].s === 'H' ? 0.18 : 0.3;
-    const haloA = makeHalo(atomR, bd.col);
-    haloA.position.copy(A);
-    hbGroup.add(haloA);
+    const haloA = makeHalo(atomR, bd.col); hbGroup.add(haloA);
+    const haloB = makeHalo(0.35, bd.col);  hbGroup.add(haloB);
+    bondHalos.push({ meshA:haloA, meshB:haloB, phase: bi * Math.PI * 0.5, bondIdx:bi });
 
-    const haloB = makeHalo(0.35, bd.col);
-    haloB.position.copy(B);
-    hbGroup.add(haloB);
-
-    bondHalos.push({ meshA:haloA, meshB:haloB, phase: bi * Math.PI * 0.5 });
-
-    // ── Midpoint label ─────────────────────────────────────────────────────
+    // Label
     const lbl = makeBondLabel(bd.label, bd.colHex);
-    lbl.position.copy(A).lerp(B, 0.5).add(new THREE.Vector3(0, 0.65, 0));
     hbGroup.add(lbl);
-    bondLabels.push(lbl);
+    bondLabels.push({ sprite:lbl, bondIdx:bi });
   });
+}
+
+// ── Per-frame: update all bond geometry to match current world positions ────
+const _wA = new THREE.Vector3(), _wB = new THREE.Vector3();
+const _hgInv = new THREE.Matrix4();
+
+function updateBondPositions(){
+  if(!hbGroup.visible) return;
+
+  // hbGroup sits in sceneGroup space. We need positions in hbGroup local space.
+  // hbGroup has no local transform beyond position.x (tracked to pbpGroup.x) and position.y,
+  // so we convert: get world pos of atom/residue, then apply hbGroup's world-inverse.
+  hbGroup.updateMatrixWorld(true);
+  _hgInv.copy(hbGroup.matrixWorld).invert();
+
+  // Build per-bond A/B in hbGroup local space
+  const bondAB = BOND_DEFS.map(function(bd){
+    // A: penicillin atom world position
+    const atomMesh = atomMeshes[bd.atomIdx];
+    atomMesh.getWorldPosition(_wA);
+    const A = _wA.clone().applyMatrix4(_hgInv);
+
+    // B: PBP residue marker — find matching KEY_RES sphere in pbpGroup by position
+    // Match by closest KEY_RES pos to bd.res
+    let bestDist = Infinity, bestMesh = null;
+    pbpGroup.children.forEach(function(c){
+      if(c.geometry && c.geometry.type === 'SphereGeometry' && c.userData.lbl){
+        const d = c.position.distanceToSquared(new THREE.Vector3(bd.res[0], bd.res[1], bd.res[2]));
+        if(d < bestDist){ bestDist=d; bestMesh=c; }
+      }
+    });
+    let B;
+    if(bestMesh){
+      bestMesh.getWorldPosition(_wB);
+      B = _wB.clone().applyMatrix4(_hgInv);
+    } else {
+      // Fallback: compute from pbpGroup world transform
+      const rawB = new THREE.Vector3(bd.res[0], bd.res[1], bd.res[2]);
+      pbpGroup.localToWorld(rawB);
+      B = rawB.applyMatrix4(_hgInv);
+    }
+    return {A, B};
+  });
+
+  // Update all dynamic tubes
+  hbGroup.children.forEach(function(c){
+    if(!c.userData.isDynamic) return;
+    const bi = c.userData.bondIdx;
+    if(bi === undefined) return;
+    const {A, B} = bondAB[bi];
+
+    let pA = A, pB = B;
+    if(c.userData.dashFrac){
+      pA = A.clone().lerp(B, c.userData.dashFrac.t0);
+      pB = A.clone().lerp(B, c.userData.dashFrac.t1);
+    }
+    repositionBondMesh(c, pA, pB);
+  });
+
+  // Update pulses
+  bondPulses.forEach(function(p){
+    const {A, B} = bondAB[p.bondIdx];
+    p.A = A; p.B = B;
+  });
+
+  // Update halos
+  bondHalos.forEach(function(h){
+    const {A, B} = bondAB[h.bondIdx];
+    h.meshA.position.copy(A);
+    h.meshB.position.copy(B);
+  });
+
+  // Update labels
+  bondLabels.forEach(function(l){
+    const {A, B} = bondAB[l.bondIdx];
+    l.sprite.position.copy(A).lerp(B, 0.5).add(new THREE.Vector3(0, 0.65, 0));
+  });
+}
+
+// Reposition an existing CylinderGeometry mesh between two points
+function repositionBondMesh(mesh, a, b){
+  const dir = b.clone().sub(a);
+  const len = dir.length();
+  if(len < 0.001){ mesh.visible=false; return; }
+  mesh.visible = true;
+  mesh.position.copy(a).addScaledVector(dir.clone().normalize(), len/2);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize());
+  // Scale Y to match new length (CylinderGeometry was built with length ~0.001)
+  const origLen = mesh.geometry.parameters ? mesh.geometry.parameters.height : 0.001;
+  if(origLen > 0) mesh.scale.y = len / origLen;
 }
 rebuildHBonds(18);
 
@@ -1185,12 +1381,118 @@ const STAGES=[
 ];
 let curStage=0;
 
+// ═══════════════════════════ INTERACTIONS LOG ══════════════════════════════
+// Per-stage interaction event data
+const STAGE_INTERACTIONS = [
+  // Stage 0: Free Drug
+  [
+    {type:'info', atoms:'β-Lactam Ring', desc:'Strained 4-membered ring system active. Ring strain energy ≈ 24 kcal/mol stored in N–C7 bond geometry.', val:'ΔE_strain = 24 kcal/mol'},
+    {type:'info', atoms:'S1 — Thiazolidine', desc:'Bicyclic sulfur maintains ring geometry. No active interactions with environment.', val:'vdW contact only'},
+    {type:'info', atoms:'O4 — β-Lactam C=O', desc:'Electrophilic carbonyl oriented outward. High susceptibility to nucleophilic attack.', val:'δ⁺ on C7 carbon'},
+    {type:'info', atoms:'COO⁻ (O2, O3)', desc:'Carboxylate anion diffusing freely in plasma. Repelled by negatively charged vessel wall.', val:'q = −1e'},
+  ],
+  // Stage 1: Approach
+  [
+    {type:'elec', atoms:'COO⁻ ↔ Lys373 Nζ', desc:'Electrostatic attraction pulls carboxylate toward Lys373 ammonium. Long-range coulombic force guides approach.', val:'r ≈ 5–8 Å, F = kq₁q₂/r²'},
+    {type:'elec', atoms:'COO⁻ ↔ Thr394 Oγ', desc:'H-bond donor on Thr394 begins orienting penicillin. Partial alignment of carboxylate axis.', val:'r ≈ 6 Å'},
+    {type:'info', atoms:'β-Lactam C=O ↔ Ser370', desc:'β-Lactam carbonyl closes on Ser370 Oγ. Weak dipole–dipole steering at ~5 Å. No bond yet.', val:'r ≈ 5.2 Å'},
+    {type:'info', atoms:'Amide N–H ↔ Backbone', desc:'Penicillin amide N-H aligns with carbonyl oxygen of active-site backbone residue.', val:'r ≈ 4.5 Å'},
+  ],
+  // Stage 2: Docking
+  [
+    {type:'hbond', atoms:'O2 (COO⁻) ↔ Lys373 Nζ–H', desc:'Strong salt-bridge / H-bond formed. Carboxylate oxygen accepts proton from protonated Lys373.', val:'r = 2.7 Å, ΔG ≈ −3 kcal/mol'},
+    {type:'hbond', atoms:'O3 (COO⁻) ↔ Thr394 Oγ–H', desc:'Second H-bond anchors the carboxylate. Dual H-bond network locks penicillin orientation.', val:'r = 2.8 Å, ΔG ≈ −2.5 kcal/mol'},
+    {type:'hbond', atoms:'N7 (amide) ↔ Ala370 C=O', desc:'Amide N–H donates to backbone carbonyl. Completes the Michaelis complex geometry.', val:'r = 3.0 Å'},
+    {type:'info', atoms:'Ser370 Oγ ↔ C7 (β-Lactam)', desc:'Nucleophilic Ser370 now 3.2 Å from electrophilic C7. Lys373 lowering Ser pKa via proton transfer.', val:'r = 3.2 Å — pre-attack'},
+    {type:'elec', atoms:'Lys373 → Ser370', desc:'Lys373 acts as general base. Deprotonates Ser370 Oγ hydroxyl, generating the oxygen nucleophile.', val:'pKa shift: ~12→8'},
+  ],
+  // Stage 3: Ring Opens
+  [
+    {type:'coval', atoms:'Ser370 Oγ → C7 (β-Lactam)', desc:'NUCLEOPHILIC ATTACK: Ser370 oxygen lone pair attacks electrophilic β-lactam C7. Tetrahedral intermediate forms.', val:'Bond order: 0 → 1'},
+    {type:'coval', atoms:'N–C7 Bond BREAKS', desc:'Strained N–C7 bond ruptures. Ring strain released exothermically. 24 kcal/mol drives irreversibility.', val:'ΔH = −24 kcal/mol 💥'},
+    {type:'hbond', atoms:'O1 (former C=O) ↔ Ser370–NH', desc:'Former carbonyl oxygen becomes alkoxide, accepts H from nearby backbone NH (oxyanion hole).', val:'r = 2.6 Å — stabilising'},
+    {type:'warn', atoms:'β-Lactam Ring RUPTURED', desc:'The 4-membered ring is now open. The N–C7 bond is permanently cleaved. This reaction is IRREVERSIBLE under physiological conditions.', val:'k_reverse ≈ 0'},
+  ],
+  // Stage 4: Acyl Bond
+  [
+    {type:'coval', atoms:'Ser370 Oγ–C7 Ester Bond', desc:'Stable covalent acyl–enzyme ester formed. Penicilloyl group permanently attached to PBP-2X transpeptidase domain.', val:'Bond energy ≈ 80 kcal/mol'},
+    {type:'hbond', atoms:'O1 ↔ Oxyanion Hole', desc:'Acyl oxygen stabilised by dual backbone NH groups forming the oxyanion hole (Ser370, Thr394).', val:'2× H-bonds, r ≈ 2.7 Å'},
+    {type:'hbond', atoms:'COO⁻ ↔ Lys373 + Thr394', desc:'Carboxylate H-bond network maintained. Penicillin locked in active site, mimicking the D-Ala–D-Ala substrate.', val:'ΔG_bind ≈ −9 kcal/mol'},
+    {type:'warn', atoms:'Active Site BLOCKED', desc:'Transpeptidase catalytic residues (Ser370, Lys373) are occupied. No D-Ala–D-Ala substrate can bind. Cell wall synthesis halted.', val:'K_i < 1 nM'},
+  ],
+  // Stage 5: PBP Blocked
+  [
+    {type:'warn', atoms:'PBP-2X — PERMANENTLY INHIBITED', desc:'All active site residues occupied by penicilloyl–ester. New peptidoglycan crosslinks cannot be catalysed. Autolysins continue degrading old NAG–NAM strands.', val:'[Free PBP] ≈ 0'},
+    {type:'info', atoms:'NAG–NAM Glycan Strands', desc:'Peptidoglycan backbone strands remain intact but new synthesis is blocked. Crosslink density slowly decreasing via autolysin activity.', val:'Crosslink t½ ≈ 20 min'},
+    {type:'elec', atoms:'Turgor Pressure Building', desc:'~5 atm internal osmotic pressure maintained by cytoplasm. Weakening wall cannot compensate. Mechanical stress accumulates.', val:'ΔP ≈ 5 atm'},
+    {type:'info', atoms:'D-Ala–D-Ala (substrate) rejected', desc:'Natural PBP substrate cannot compete with the covalent inhibitor. Competitive inhibition is moot — bond is irreversible.', val:'IC₅₀ → ∞'},
+  ],
+  // Stage 6: Wall Breaks
+  [
+    {type:'warn', atoms:'Peptide Crosslinks CLEAVING', desc:'Autolysin murein hydrolases sever D-Ala–D-Ala bridges between NAM residues. Structural gaps propagate through the mesh.', val:'Rate ∝ [Autolysin]'},
+    {type:'warn', atoms:'Glycan Strand Fracture', desc:'NAG–NAM backbone strands losing integrity. Each broken bond removes a load-bearing element from the wall lattice.', val:'Fracture cascade active'},
+    {type:'elec', atoms:'Osmotic Stress — Unbalanced', desc:'With crosslinks failing, internal turgor pressure applies tensile stress to remaining wall segments. Stress concentration at fracture tips.', val:'σ_max > σ_failure'},
+    {type:'info', atoms:'PGN Node Drift', desc:'Crosslink nodes lose positional anchoring. van der Waals contacts insufficient to maintain lattice without covalent bridges.', val:'Diffusion-limited drift'},
+  ],
+  // Stage 7: Lysis
+  [
+    {type:'warn', atoms:'Membrane — UNDER TENSION', desc:'Plasma membrane bulges outward. Lipid bilayer under 5 atm tensile pressure. Membrane tension approaches lysis threshold (~10 mN/m).', val:'γ_membrane ≈ lysis threshold'},
+    {type:'warn', atoms:'Spheroplast Formation', desc:'Bacterium rounding into sphere — maximum volume for given surface area. Classic spheroplast morphology. Last stage before rupture.', val:'V → 4/3πr³ max'},
+    {type:'elec', atoms:'Water Influx (Osmosis)', desc:'Water molecules rushing in along osmotic gradient. Hypotonic external environment vs. hypertonic cytoplasm drives massive water entry.', val:'J_w = L_p·(Δπ − ΔP)'},
+    {type:'info', atoms:'Ion Homeostasis Failure', desc:'K⁺, Na⁺, Cl⁻ gradients collapsing. Membrane potential (−70 mV) dissipating as ion channels overwhelmed.', val:'ΔΨ → 0 mV'},
+  ],
+  // Stage 8: Cell Death
+  [
+    {type:'warn', atoms:'MEMBRANE RUPTURE — LYSIS', desc:'Lipid bilayer torn. Irreversible membrane failure. Cytoplasmic contents released into bloodstream at explosive velocity.', val:'ΔG_lysis >> 0 (irreversible)'},
+    {type:'info', atoms:'Ribosome Release (70S)', desc:'70S ribosomal subunits expelled. Each bacterium contains ~20,000 ribosomes. These signal PAMPs for immune recognition.', val:'~20,000 ribosomes/cell'},
+    {type:'info', atoms:'DNA Release', desc:'Chromosomal DNA (4–5 Mbp circular) expelled and sheared by fluid forces. Acts as DAMP, activating innate immune TLR9.', val:'~4.5 Mbp / chromosome'},
+    {type:'elec', atoms:'Complement Activation', desc:'Cytoplasmic debris and exposed lipid A (LPS) activate complement cascade (C3b opsonisation). Neutrophils recruited.', val:'C3b → MAC pore formation'},
+    {type:'info', atoms:'Bactericidal Outcome', desc:'Cell death complete. Unlike bacteriostatic drugs, β-lactams kill the cell. Preferred for immunocompromised patients and severe infections.', val:'MBC/MIC ratio ≈ 1–2'},
+  ],
+];
+
+let ilogVisible=true;
+let ilogEntryCount=0;
+
+function toggleILog(){
+  ilogVisible=!ilogVisible;
+  const body=document.getElementById('ilog-body');
+  const toggle=document.getElementById('ilog-toggle');
+  body.style.display=ilogVisible?'':'none';
+  toggle.classList.toggle('collapsed',!ilogVisible);
+}
+
+function renderILog(stageIdx){
+  const body=document.getElementById('ilog-body');
+  const count=document.getElementById('ilog-count');
+  body.innerHTML='';
+  const events=STAGE_INTERACTIONS[stageIdx]||[];
+  ilogEntryCount=events.length;
+  count.textContent=ilogEntryCount;
+  const now=new Date();
+  const ts=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+  events.forEach((ev,idx)=>{
+    const el=document.createElement('div');
+    el.className='ientry '+ev.type;
+    el.style.animationDelay=(idx*0.06)+'s';
+    el.innerHTML=`<div class="ie-head"><span class="ie-type">${ev.type.toUpperCase()}</span><span class="ie-time">${ts}</span></div>`+
+      `<div class="ie-atoms">${ev.atoms}</div>`+
+      `<div class="ie-desc">${ev.desc}</div>`+
+      (ev.val?`<span class="ie-val">⊳ ${ev.val}</span>`:'');
+    body.appendChild(el);
+  });
+  // Scroll to top on new stage
+  body.scrollTop=0;
+}
+
+
 function goStage(n){
   curStage=n;
   document.querySelectorAll('.sb').forEach((b,i)=>b.classList.toggle('on',i===n));
   const s=STAGES[n];
   document.getElementById('s-title').textContent=s.title;
   document.getElementById('s-desc').textContent=s.desc;
+  renderILog(n);
   setBar('m1','v1',s.b); setBar('m2','v2',s.a); setBar('m3','v3',s.i);
 
   // In VR: always lock view to face the molecular scene so docking is visible
@@ -1210,7 +1512,6 @@ function goStage(n){
   (function mv(){ t2+=0.03;
     var p=Math.min(t2,1); p=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
     pbpGroup.position.x=fromX+(toX-fromX)*p;
-    hbGroup.position.x=pbpGroup.position.x;
     if(t2<1) requestAnimationFrame(mv);
     else rebuildHBonds(toX);
   })();
@@ -1377,6 +1678,14 @@ cv.addEventListener('touchmove',e=>{
 // ═══════════════════════════ RAYCASTER TOOLTIPS ════════════════════════════
 const ray=new THREE.Raycaster(), mp=new THREE.Vector2();
 const tip=document.getElementById('tip');
+function interactionClass(txt){
+  if(!txt) return 'none';
+  if(txt.includes('H-bond')||txt.includes('oxyanion')) return 'hbond';
+  if(txt.includes('Electrostatic')) return 'elec';
+  if(txt.includes('Covalent')||txt.includes('BREAKS')) return txt.includes('BREAKS') ? 'break' : 'coval';
+  if(txt.includes('vdW')) return 'vdw';
+  return 'none';
+}
 window.addEventListener('mousemove',e=>{
   mp.x=(e.clientX/innerWidth)*2-1; mp.y=-(e.clientY/innerHeight)*2+1;
   ray.setFromCamera(mp,camera);
@@ -1385,9 +1694,17 @@ window.addEventListener('mousemove',e=>{
   if(hits.length&&hits[0].object.userData.lbl){
     const o=hits[0].object;
     tip.style.display='block';
-    tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY-8)+'px';
-    document.getElementById('t-name').textContent=`${o.userData.sym||''}${o.userData.idx!==undefined?' #'+(o.userData.idx+1):''}`;
-    document.getElementById('t-info').textContent=o.userData.lbl;
+    const tw=210, th=80, margin=16;
+    let tx=e.clientX+margin, ty=e.clientY-margin;
+    if(tx+tw>innerWidth)  tx=e.clientX-tw-margin;
+    if(ty+th>innerHeight) ty=e.clientY-th-margin;
+    if(ty<0) ty=margin;
+    tip.style.left=tx+'px'; tip.style.top=ty+'px';
+    document.getElementById('t-name').textContent = o.userData.iupacName || '';
+    const infoEl = document.getElementById('t-info');
+    const ixt = o.userData.interaction;
+    infoEl.textContent = ixt || '—';
+    infoEl.className = 'ti ' + interactionClass(ixt);
     o.material.emissiveIntensity=1.6;
   } else {
     tip.style.display='none';
@@ -1705,10 +2022,12 @@ function render(){
   lblGroup.children.forEach(l=>l.quaternion.copy(camera.quaternion));
   // molGroup floats at origin (stage positioning is now handled by pbpGroup.position.x)
   molGroup.position.y=Math.sin(clk*0.55)*0.22;
-  // pbpGroup floats in Y; hbGroup tracks pbpGroup X and also floats Y
+  // pbpGroup floats in Y
   pbpGroup.position.y=Math.sin(clk*0.55)*0.22;
-  hbGroup.position.x=pbpGroup.position.x;
-  hbGroup.position.y=Math.sin(clk*0.55)*0.22;
+  // hbGroup lives at scene origin — bond positions computed from world space each frame
+  hbGroup.position.set(0,0,0);
+  // Update bond lines/pulses/halos to track actual atom world positions
+  updateBondPositions();
   // RBC flow
   rbcGroup.children.forEach(m=>{
     m.position.x+=m.userData.spd*0.04;
@@ -1716,13 +2035,17 @@ function render(){
     m.position.y+=Math.sin(clk+m.userData.ph)*0.004;
     m.rotation.y+=0.007;
   });
-  // plasma flow
-  const pp=plGeo.attributes.position.array;
-  for(let i=0;i<plN;i++){ pp[i*3]+=0.07; if(pp[i*3]>55)pp[i*3]=-55; pp[i*3+1]+=Math.sin(clk+plPh[i])*0.003; }
-  plGeo.attributes.position.needsUpdate=true;
   // β-ring pulse
   blRing.rotation.y+=0.013;
   blRing.material.opacity=0.45+0.25*Math.sin(clk*2.4);
+  // Active-site pocket animations
+  if(pbpGroup.visible){
+    pocketRing.rotation.y+=0.012;
+    pocketRingMat.opacity=0.35+0.25*Math.sin(clk*2.1);
+    pocketCoreMat.opacity=pbpGroup.visible?(0.25+0.2*Math.sin(clk*3.5)):0;
+    // Billboard active site label toward camera
+    if(asLabel) asLabel.lookAt(camera.getWorldPosition(new THREE.Vector3()));
+  }
   // ── Interaction force animations ─────────────────────────────────────────
   if(hbGroup.visible){
     // Traveling energy pulses along each bond
@@ -1890,6 +2213,7 @@ setTimeout(()=>{
   const l=document.getElementById('ld');
   l.style.opacity='0'; l.style.pointerEvents='none';
   setTimeout(()=>l.remove(),900);
+  renderILog(0);
 },3000);
 </script>
 </body>
