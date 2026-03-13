@@ -514,7 +514,7 @@ for(var ci=0; ci<2; ci++){
         var idx2 = obj.userData.idx !== undefined ? ' #'+(obj.userData.idx+1) : '';
         vrPanel.draw(sym+idx2, obj.userData.lbl);
         vrPanel.mesh.position.copy(hits[0].point).add(new THREE.Vector3(0,1.8,0));
-        vrPanel.mesh.lookAt(camera.getWorldPosition(new THREE.Vector3()));
+        vrPanel.mesh.lookAt(renderer.xr.getCamera(camera).getWorldPosition(new THREE.Vector3()));
         vrPanel.mesh.visible = true;
 
         // Cancel any existing highlight on this atom before starting a new one
@@ -2281,7 +2281,8 @@ function render(){
   clk+=0.011;
   if(state.rot && !isDrag && !renderer.xr.isPresenting) rY+=0.004;
   sceneGroup.rotation.x=rX; sceneGroup.rotation.y=rY;
-  lblGroup.children.forEach(l=>l.quaternion.copy(camera.quaternion));
+  var _activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera;
+  lblGroup.children.forEach(l=>l.quaternion.copy(_activeCam.quaternion));
   // molGroup floats at origin (stage positioning is now handled by pbpGroup.position.x)
   molGroup.position.y=Math.sin(clk*0.55)*0.22;
   // pbpGroup floats in Y
@@ -2306,7 +2307,7 @@ function render(){
     pocketRingMat.opacity=0.35+0.25*Math.sin(clk*2.1);
     pocketCoreMat.opacity=pbpGroup.visible?(0.25+0.2*Math.sin(clk*3.5)):0;
     // Billboard active site label toward camera
-    if(asLabel) asLabel.lookAt(camera.getWorldPosition(new THREE.Vector3()));
+    if(asLabel) asLabel.lookAt(_activeCam.getWorldPosition(new THREE.Vector3()));
   }
   // ── Interaction force animations ─────────────────────────────────────────
   if(hbGroup.visible){
@@ -2425,7 +2426,7 @@ function render(){
   // ── VR menu billboarding — always face camera (only when not being dragged / parented to ctrl) ──
   if(renderer.xr.isPresenting && !vrMenuDrag.active){
     var camWP = new THREE.Vector3();
-    camera.getWorldPosition(camWP);
+    _activeCam.getWorldPosition(camWP);
     if(vrMenu.mesh.visible) vrMenu.mesh.lookAt(camWP);
     if(vrMenuToggleMesh.visible) vrMenuToggleMesh.lookAt(camWP);
     if(vrPanel.mesh.visible) vrPanel.mesh.lookAt(camWP);
