@@ -1565,14 +1565,12 @@ function goStage(n){
   if(s.hb&&!hbGroup.visible){ hbGroup.visible=true; state.hb=true; var eh=document.getElementById('b-hb'); if(eh)eh.classList.add('on'); }
   if(!s.hb&&hbGroup.visible){ hbGroup.visible=false; state.hb=false; var eh=document.getElementById('b-hb'); if(eh)eh.classList.remove('on'); }
 
-  // PBP slide animation
-  var fromX=pbpGroup.position.x, toX=PBP_ALIGN.x + s.pbpX, t2=0;
-  (function mv(){ t2+=0.03;
-    var p=Math.min(t2,1); p=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
-    pbpGroup.position.x=fromX+(toX-fromX)*p;
-    if(t2<1) requestAnimationFrame(mv);
-    else rebuildHBonds(toX);
-  })();
+  // PBP slide animation — uses tween system so it works in VR (XR loop)
+  var fromX=pbpGroup.position.x, toX=PBP_ALIGN.x + s.pbpX;
+  addTween({ duration:600,
+    onUpdate:function(p){ pbpGroup.position.x=fromX+(toX-fromX)*p; },
+    onComplete:function(){ pbpGroup.position.x=toX; rebuildHBonds(toX); }
+  });
 
   // ── Stage-specific effects ──────────────────────────────────────────────
   // Always reset bacterium + burst state first
@@ -1700,13 +1698,12 @@ function goStage(n){
           pMesh.userData.vel=vel; pMesh.userData.life=1.0;
           molGroup.add(pMesh);
           molGroup.userData.ringOpenObjs.push(pMesh);
-          (function(pm){ var lt=0;
-            (function animP(){
-              lt+=0.03; pm.position.add(pm.userData.vel);
-              pm.material.opacity=Math.max(0,0.9-lt);
-              if(lt<1.0) requestAnimationFrame(animP);
-              else molGroup.remove(pm);
-            })();
+          // Animate via tween system (works in VR)
+          (function(pm){
+            addTween({ duration:900,
+              onUpdate:function(p){ pm.position.add(pm.userData.vel); pm.material.opacity=Math.max(0,0.9-p*0.9); },
+              onComplete:function(){ molGroup.remove(pm); }
+            });
           })(pMesh);
         }
 
@@ -1757,15 +1754,11 @@ function goStage(n){
           covalBond.scale.set(1,0,1); // start at zero length, grow
           molGroup.add(covalBond); molGroup.userData.ringOpenObjs.push(covalBond);
 
-          // Animate bond growing
-          var growT=0;
-          (function growBond(){
-            growT+=0.04; var s=Math.min(growT,1);
-            // ease out
-            s=1-(1-s)*(1-s);
-            covalBond.scale.set(1,s,1);
-            if(growT<1) requestAnimationFrame(growBond);
-          })();
+          // Animate bond growing via tween system (works in VR)
+          addTween({ duration:700,
+            onUpdate:function(p){ covalBond.scale.set(1,p,1); },
+            onComplete:function(){ covalBond.scale.set(1,1,1); }
+          });
 
           // C7 atom pulses bright orange (now ester carbon)
           C7mesh.material.color.setHex(0xff8800); C7mesh.material.emissive.setHex(0xff8800);
@@ -1815,15 +1808,8 @@ function goStage(n){
   if(n===5){
     // Show intact bacterium — all layers healthy, PGN glowing green
     bacteriaGroup.visible=true;
-    // Pulse PGN strands to show synthesis has stopped
-    let pt=0;
-    (function pgnPulse(){
-      pt+=0.018; if(!bacteriaGroup.visible||curStage!==5) return;
-      const emi=0.5+0.5*Math.abs(Math.sin(pt));
-      bactRefs.pgn_strands.forEach(m=>m.material.emissiveIntensity=emi);
-      bactRefs.pgn_nodes.forEach(m=>m.material.emissiveIntensity=emi*1.3);
-      requestAnimationFrame(pgnPulse);
-    })();
+    // Pulse PGN strands continuously — driven by main render loop via clk, not rAF
+    // (the render loop already has clk — we just set a flag and animate in render)
   }
 
   if(n===6){
@@ -2271,6 +2257,32 @@ async function enterVR(){
   }
 }
 
+// ═══════════════════════════ TWEEN SYSTEM ══════════════════════════════════
+// All stage animations run through this — works in both normal + VR (XR loop)
+var _tweens = [];
+function addTween(opts){
+  _tweens.push({ duration:opts.duration||500, delay:opts.delay||0, elapsed:0,
+    onUpdate:opts.onUpdate||null, onComplete:opts.onComplete||null, done:false });
+}
+function tickTweens(dt){
+  for(var i=_tweens.length-1;i>=0;i--){
+    var tw=_tweens[i];
+    if(tw.done){_tweens.splice(i,1);continue;}
+    tw.elapsed+=dt;
+    if(tw.elapsed<tw.delay) continue;
+    var localT=tw.elapsed-tw.delay;
+    var raw=Math.min(localT/tw.duration,1);
+    var p=raw<0.5?2*raw*raw:1-Math.pow(-2*raw+2,2)/2;
+    if(tw.onUpdate) tw.onUpdate(p,raw);
+    if(raw>=1){
+      tw.done=true;
+      if(tw.onComplete) tw.onComplete();
+      _tweens.splice(i,1);
+    }
+  }
+}
+var _lastRenderTime=null;
+
 // ═══════════════════════════ ANIMATION LOOP ════════════════════════════════
 let clk=0;
 function animate(){
@@ -2278,6 +2290,10 @@ function animate(){
   renderer.setAnimationLoop(render);
 }
 function render(){
+  var _now=performance.now();
+  var _dt=_lastRenderTime?Math.min(_now-_lastRenderTime,100):16;
+  _lastRenderTime=_now;
+  tickTweens(_dt);
   clk+=0.011;
   if(state.rot && !isDrag && !renderer.xr.isPresenting) rY+=0.004;
   sceneGroup.rotation.x=rX; sceneGroup.rotation.y=rY;
@@ -2332,6 +2348,12 @@ function render(){
     hbGroup.children.forEach(function(c){
       if(c.userData.isBondGlow) c.material.opacity = 0.10 + 0.10*Math.sin(clk*2.5);
     });
+  }
+  // ── Stage 5: PGN synthesis stopped — pulse PGN via render loop ──────────
+  if(curStage===5 && bacteriaGroup.visible){
+    const emi=0.5+0.5*Math.abs(Math.sin(clk*1.6));
+    bactRefs.pgn_strands.forEach(m=>m.material.emissiveIntensity=emi);
+    bactRefs.pgn_nodes.forEach(m=>m.material.emissiveIntensity=emi*1.3);
   }
   // ── Stage 6: breaking PGN strands drift ──────────────────────────────────
   if(degradeAnimating && bacteriaGroup.visible){
