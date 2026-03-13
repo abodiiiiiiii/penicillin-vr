@@ -278,7 +278,7 @@ const ARAD = {S:0.28, O:0.24, N:0.24, C:0.22, H:0.12};
 const AEMI = {S:0.7,  O:0.55, N:0.45, C:0.2,  H:0.1};
 
 // β-lactam bicyclic core atom indices (verified from bond topology):
-// S1(0), N1-bridgehead(6), C5(8), C3-thiazolidine(9), C4(10), C6(11), C7-carbonyl(12), C2-carboxylate(15)
+// S4(0), N1-bridgehead(6), C5(8), C3-thiazolidine(9), C2(10), C6(11), C7-carbonyl(12), 2-carboxylate C=O(15)
 const BETA_ATOMS = new Set([0,6,8,9,10,11,12,15]);
 const BETA_BONDS = new Set(); // filled below
 
@@ -446,6 +446,10 @@ for(var ci=0; ci<2; ci++){
     ctrl.userData.glowMat = glowMat;
 
     controllers.push(ctrl);
+
+    // Per-controller scale-drag state
+    ctrlState[i].scaleDrag = false;
+
     ctrl.addEventListener('selectstart', function(){
       var origin = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
       var dir = new THREE.Vector3(0,0,-1).applyMatrix4(
@@ -470,15 +474,11 @@ for(var ci=0; ci<2; ci++){
         if(grabHits.length){
           vrMenuDrag.active = true;
           vrMenuDrag.ctrlIdx = i;
-          // Reparent: move menu from scene into controller local space
           var menuWorldPos = vrMenu.mesh.position.clone();
-          var menuWorldQuat = vrMenu.mesh.quaternion.clone();
           ctrl.add(vrMenu.mesh);
           ctrl.add(vrMenuToggleMesh);
-          // Convert world position to controller local position
           ctrl.worldToLocal(menuWorldPos);
           vrMenu.mesh.position.copy(menuWorldPos);
-          // Store the vertical offset for toggle button
           vrMenuDrag.toggleOffset = vrMenu.MH/2 + 0.16;
           vrMenuToggleMesh.position.copy(menuWorldPos).y += vrMenuDrag.toggleOffset;
           return;
@@ -493,10 +493,12 @@ for(var ci=0; ci<2; ci++){
           return;
         }
 
-        // ── Scale track ───────────────────────────────────────────────────
+        // ── Scale track — begin drag ──────────────────────────────────────
         var scaleHits2 = ray.intersectObject(vrMenu.scaleTrackMesh, false);
         if(scaleHits2.length){
-          var lx = scaleHits2[0].point.x - vrMenu.mesh.position.x;
+          ctrlState[i].scaleDrag = true;  // mark drag active — render loop handles continuous update
+          // Apply immediately on press too
+          var lx = scaleHits2[0].point.x - vrMenu.mesh.getWorldPosition(new THREE.Vector3()).x;
           var pct2 = Math.max(0, Math.min(1, (lx + vrMenu.MW/2) / vrMenu.MW));
           var ns = (0.4 + pct2*(2.5-0.4)).toFixed(2);
           document.getElementById('scl').value = ns;
@@ -517,11 +519,8 @@ for(var ci=0; ci<2; ci++){
         vrPanel.mesh.lookAt(renderer.xr.getCamera(camera).getWorldPosition(new THREE.Vector3()));
         vrPanel.mesh.visible = true;
 
-        // Cancel any existing highlight on this atom before starting a new one
         if(obj.userData._hlTimer){ clearTimeout(obj.userData._hlTimer); obj.userData._hlTimer=null; }
-        // Remove any existing glow sphere on this atom
         if(obj.userData._glowSphere){ scene.remove(obj.userData._glowSphere); obj.userData._glowSphere=null; }
-        // Always restore to true original scale (stored once at build time, never overwritten)
         var origScale = obj.userData.origScale || 1.0;
         obj.scale.setScalar(2.8);
         obj.material.emissiveIntensity = 4.0;
@@ -545,22 +544,22 @@ for(var ci=0; ci<2; ci++){
       }
     });
 
-    // Release menu drag: reparent back to scene, preserving world position
+    // Release: end menu drag or scale drag
     ctrl.addEventListener('selectend', function(){
+      // End scale drag
+      ctrlState[i].scaleDrag = false;
+      // End menu drag
       if(vrMenuDrag.active && vrMenuDrag.ctrlIdx === i){
         vrMenuDrag.active = false;
         vrMenuDrag.ctrlIdx = -1;
-        // Get world positions before removing from controller
         var menuWP = new THREE.Vector3();
         var toggleWP = new THREE.Vector3();
         vrMenu.mesh.getWorldPosition(menuWP);
         vrMenuToggleMesh.getWorldPosition(toggleWP);
-        // Reparent back to scene
         scene.add(vrMenu.mesh);
         scene.add(vrMenuToggleMesh);
         vrMenu.mesh.position.copy(menuWP);
         vrMenuToggleMesh.position.copy(toggleWP);
-        // Reset local rotation (billboarding will handle facing)
         vrMenu.mesh.rotation.set(0,0,0);
         vrMenuToggleMesh.rotation.set(0,0,0);
       }
@@ -671,35 +670,47 @@ PEN_BONDS.forEach(([a,b,o])=>{
   if(BETA_ATOMS.has(a)&&BETA_ATOMS.has(b)) BETA_BONDS.add(`${a}-${b}`);
 });
 
-// Atom labels: name = "atom# symbol", interaction = short tag or null
+// Atom labels — Penicillin V IUPAC: (2S,5R,6R)-3,3-dimethyl-7-oxo-6-[(phenoxyacetyl)amino]-4-thia-1-azabicyclo[3.2.0]heptane-2-carboxylic acid
+// Bicyclic numbering: N1(bridgehead)–C2(thiazolidine)–C3(gem-diMe)–S4–C5(β-lac)–C6(6R)–C7(carbonyl)
+// Ring atoms: β-lactam = N1–C5–C6–C7; thiazolidine = N1–C2–C3–S4–C5
 const IUPAC_NAMES = {
-  0:  {name:'S1',      interaction: null},
-  1:  {name:'O1 (C=O)',   interaction: 'H-bond → Ser370 oxyanion hole'},
-  2:  {name:'O2 (COO⁻)',  interaction: 'Electrostatic → Lys373'},
-  3:  {name:'O3 (COO⁻)',  interaction: 'H-bond → Thr394'},
-  4:  {name:'O4',      interaction: null},
-  5:  {name:'O5',      interaction: null},
-  6:  {name:'N1 (bridge)', interaction: 'Bond breaks (N1–C7) — ring opens'},
-  7:  {name:'N2 (NH)', interaction: 'H-bond → backbone'},
-  8:  {name:'C5',      interaction: null},
-  9:  {name:'C3',      interaction: null},
-  10: {name:'C4',      interaction: null},
-  11: {name:'C6',      interaction: null},
-  12: {name:'C7 (β-lactam)', interaction: 'Covalent attack by Ser370'},
-  13: {name:'C11',     interaction: 'vdW → hydrophobic pocket'},
-  14: {name:'C12',     interaction: 'vdW → hydrophobic pocket'},
-  15: {name:'C2 (COO⁻)', interaction: null},
-  16: {name:'C8',      interaction: null},
-  17: {name:'C9',      interaction: null},
-  18: {name:'C13 (benzyl)', interaction: 'vdW → hydrophobic pocket'},
-  19: {name:'C14',     interaction: null},
-  20: {name:'C15',     interaction: null},
-  21: {name:'C16',     interaction: null},
-  22: {name:'C17',     interaction: null},
-  23: {name:'C18',     interaction: null},
+  0:  {name:'S4',            interaction: null},                                          // thiazolidine sulfur
+  1:  {name:'O (C7=O)',      interaction: 'H-bond → Ser370 oxyanion hole'},               // β-lactam carbonyl O
+  2:  {name:'O2 (COO⁻)',     interaction: 'Electrostatic → Lys373 Nζ'},                  // carboxylate O (=O)
+  3:  {name:'O3 (COO⁻)',     interaction: 'H-bond → Thr394 Oγ'},                         // carboxylate O (–O⁻)
+  4:  {name:'O (C=O amide)', interaction: null},                                          // phenoxyacetyl C=O O
+  5:  {name:'O (phenoxy)',   interaction: null},                                          // phenoxy ether O
+  6:  {name:'N1 (bridge)',   interaction: 'N1–C7 bond breaks on ring opening'},           // bicyclic bridgehead N
+  7:  {name:'N6 (NH amide)', interaction: 'H-bond → backbone carbonyl'},                  // 6-amino NH
+  8:  {name:'C5',            interaction: null},                                          // β-lactam C adj to N1 & S4
+  9:  {name:'C3',            interaction: null},                                          // thiazolidine gem-diMe C
+  10: {name:'C2 (2S)',       interaction: null},                                          // thiazolidine C adj to N1 — stereocenter
+  11: {name:'C6 (6R)',       interaction: 'vdW contacts active site'},                    // 6R-amino C — stereocenter
+  12: {name:'C7 (β-lac C=O)',interaction: 'Nucleophilic attack by Ser370 Oγ'},           // β-lactam electrophilic C
+  13: {name:'3-CH3 (a)',      interaction: 'vdW → hydrophobic pocket'},                    // gem-methyl 1
+  14: {name:'3-CH3 (b)',      interaction: 'vdW → hydrophobic pocket'},                    // gem-methyl 2
+  15: {name:'C(=O)O⁻ (2-carboxylate)', interaction: null},                                 // carboxylate carbon
+  16: {name:'C (amide C=O)', interaction: null},                                          // phenoxyacetyl carbonyl C
+  17: {name:'C (–OCH₂–)',   interaction: null},                                          // phenoxy methylene
+  18: {name:'C1′ (phenyl)', interaction: 'vdW → hydrophobic pocket'},                    // phenyl ipso
+  19: {name:'C2′ (phenyl)', interaction: null},
+  20: {name:'C3′ (phenyl)', interaction: null},
+  21: {name:'C4′ (phenyl)', interaction: 'vdW → hydrophobic pocket'},                    // phenyl para
+  22: {name:'C5′ (phenyl)', interaction: null},
+  23: {name:'C6′ (phenyl)', interaction: null},
+};
+// Hydrogens — mapped to their parent heavy atom
+const H_NAMES = {
+  24:'H-C5',   25:'H-C2',   26:'H-C6',
+  27:'H-C11a', 28:'H-C11b', 29:'H-C11c',   // gem-methyl 1
+  30:'H-C12a', 31:'H-C12b', 32:'H-C12c',   // gem-methyl 2
+  33:'H-N6',   34:'H-O(COO⁻)',              // acidic OH
+  35:'H-C(CH₂)a', 36:'H-C(CH₂)b',         // methylene –OCH₂–
+  37:'H-C2′', 38:'H-C3′',
+  39:'H-C4′', 40:'H-C5′', 41:'H-C6′',
 };
 for(let hi=24;hi<=41;hi++){
-  IUPAC_NAMES[hi]={name:`H${hi-23}`, interaction: null};
+  IUPAC_NAMES[hi]={name: H_NAMES[hi]||`H${hi-23}`, interaction: null};
 }
 PEN_ATOMS.forEach(at=>{
   const col = ACOL[at.s]||0x999999;
@@ -785,8 +796,8 @@ function makeLbl(txt,pos){
   m.position.fromArray(pos).y+=0.8;
   return m;
 }
-// Key atom labels: S1, O(C7=O), N1-bridgehead, N2(NH), C7-carbonyl
-[{i:0,n:'S1'},{i:1,n:'O(C7=O)'},{i:6,n:'N1'},{i:7,n:'N2(NH)'},{i:12,n:'C7'}].forEach(({i,n})=>{
+// Key atom labels: S4, O(C7=O), N1-bridgehead, N6(NH), C7-carbonyl, C2-COOH
+[{i:0,n:'S4'},{i:1,n:'O(C7=O)'},{i:6,n:'N1'},{i:7,n:'N6(NH)'},{i:12,n:'C7'},{i:15,n:'C2-COOH'}].forEach(({i,n})=>{
   const a=PEN_ATOMS[i];
   lblGroup.add(makeLbl(n,[a.x,a.y,a.z]));
 });
@@ -1802,6 +1813,33 @@ function goStage(n){
     },600);
   }
 
+  if(n===4){
+    // Keep the β-lactam ring open during acyl-enzyme stage
+    var C7mesh4 = atomMeshes[12];
+    var N1mesh4 = atomMeshes[6];
+    // Hide the N1–C7 bond cylinder in bondGroup (no snap animation here)
+    var n1pos4=new THREE.Vector3(); N1mesh4.getWorldPosition(n1pos4);
+    var c7pos4=new THREE.Vector3(); C7mesh4.getWorldPosition(c7pos4);
+    var targetMid4=n1pos4.clone().add(c7pos4).multiplyScalar(0.5);
+    var closestBond4=null; var closestDist4=99;
+    bondGroup.children.forEach(function(bm){
+      var bWorld=new THREE.Vector3(); bm.getWorldPosition(bWorld);
+      var d=bWorld.distanceTo(targetMid4);
+      if(d<closestDist4){closestDist4=d;closestBond4=bm;}
+    });
+    if(closestBond4 && closestDist4<1.2){
+      closestBond4.visible=false;
+      molGroup.userData.ringOpenObjs._hiddenBond=closestBond4;
+    }
+    // Color cues for the open ring / acyl-enzyme state
+    blRing.material.color.setHex(0xff6600); blRing.material.opacity=0.55;
+    atomMeshes.forEach(m=>{ if(m.userData.isBeta){m.material.color.setHex(0xff6600);m.material.emissive.setHex(0xff4400);m.material.emissiveIntensity=0.7;} });
+    N1mesh4.material.color.setHex(0xffee00); N1mesh4.material.emissive.setHex(0xffee00);
+    N1mesh4.material.emissiveIntensity=1.2;
+    C7mesh4.material.color.setHex(0xff8800); C7mesh4.material.emissive.setHex(0xff8800);
+    C7mesh4.material.emissiveIntensity=1.2;
+  }
+
   // Hide penicillin molecule + PBP for bacteria stages (5-8), show for molecular stages (0-4)
   var molStage = n <= 4;
   molGroup.visible = molStage;
@@ -2433,7 +2471,7 @@ function render(){
     camera.position.y=Math.sin(clk*0.17)*0.5;
     camera.position.x=Math.cos(clk*0.21)*0.35;
   }
-  // Animate VR controller atom hand models
+  // Animate VR controller atom hand models + continuous scale drag
   if(renderer.xr.isPresenting){
     for(var gi=0; gi<controllers.length; gi++){
       var ct = controllers[gi];
@@ -2449,6 +2487,23 @@ function render(){
           ct.userData.nucleusMat.emissiveIntensity = gripping
             ? 0.9 + 0.3 * Math.sin(clk * 6)
             : 0.45 + 0.15 * Math.sin(clk * 1.8 + gi);
+      }
+      // ── Continuous scale drag — update every frame while trigger held over track ──
+      if(ctrlState[gi].scaleDrag && vrMenuVisible && vrMenu.scaleTrackMesh){
+        var sdOrigin = new THREE.Vector3().setFromMatrixPosition(ct.matrixWorld);
+        var sdDir = new THREE.Vector3(0,0,-1).applyMatrix4(
+          new THREE.Matrix4().extractRotation(ct.matrixWorld)
+        );
+        var sdRay = new THREE.Raycaster(); sdRay.set(sdOrigin, sdDir);
+        var sdHits = sdRay.intersectObject(vrMenu.scaleTrackMesh, false);
+        if(sdHits.length){
+          var menuWX = vrMenu.mesh.getWorldPosition(new THREE.Vector3()).x;
+          var lx2 = sdHits[0].point.x - menuWX;
+          var pct3 = Math.max(0, Math.min(1, (lx2 + vrMenu.MW/2) / vrMenu.MW));
+          var ns2 = (0.4 + pct3*(2.5-0.4)).toFixed(2);
+          document.getElementById('scl').value = ns2;
+          rescale(ns2); vrMenu.draw();
+        }
       }
     }
   }
