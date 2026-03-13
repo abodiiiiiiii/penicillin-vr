@@ -1698,13 +1698,20 @@ function goStage(n){
           pMesh.userData.vel=vel; pMesh.userData.life=1.0;
           molGroup.add(pMesh);
           molGroup.userData.ringOpenObjs.push(pMesh);
-          // Animate via tween system (works in VR)
-          (function(pm){
+          // Animate via tween system (works in VR) — capture start pos
+          (function(pm, startPos){
             addTween({ duration:900,
-              onUpdate:function(p){ pm.position.add(pm.userData.vel); pm.material.opacity=Math.max(0,0.9-p*0.9); },
+              onUpdate:function(p){
+                pm.position.set(
+                  startPos.x + pm.userData.vel.x * p * 30,
+                  startPos.y + pm.userData.vel.y * p * 30,
+                  startPos.z + pm.userData.vel.z * p * 30
+                );
+                pm.material.opacity=Math.max(0,0.9-p*0.9);
+              },
               onComplete:function(){ molGroup.remove(pm); }
             });
-          })(pMesh);
+          })(pMesh, pMesh.position.clone());
         }
 
         // N1 atom turns yellow — now carries the H⁺
@@ -2308,21 +2315,21 @@ function render(){
   // Update bond lines/pulses/halos to track actual atom world positions
   updateBondPositions();
   // RBC flow
+  var _fs=_dt/16;
   rbcGroup.children.forEach(m=>{
-    m.position.x+=m.userData.spd*0.04;
+    m.position.x+=m.userData.spd*0.04*_fs;
     if(m.position.x>38) m.position.x=-38;
-    m.position.y+=Math.sin(clk+m.userData.ph)*0.004;
-    m.rotation.y+=0.007;
+    m.position.y+=Math.sin(clk+m.userData.ph)*0.004*_fs;
+    m.rotation.y+=0.007*_fs;
   });
   // β-ring pulse
-  blRing.rotation.y+=0.013;
+  blRing.rotation.y+=0.013*_fs;
   blRing.material.opacity=0.45+0.25*Math.sin(clk*2.4);
   // Active-site pocket animations
   if(pbpGroup.visible){
-    pocketRing.rotation.y+=0.012;
+    pocketRing.rotation.y+=0.012*_fs;
     pocketRingMat.opacity=0.35+0.25*Math.sin(clk*2.1);
     pocketCoreMat.opacity=pbpGroup.visible?(0.25+0.2*Math.sin(clk*3.5)):0;
-    // Billboard active site label toward camera
     if(asLabel) asLabel.lookAt(_activeCam.getWorldPosition(new THREE.Vector3()));
   }
   // ── Interaction force animations ─────────────────────────────────────────
@@ -2357,52 +2364,51 @@ function render(){
   }
   // ── Stage 6: breaking PGN strands drift ──────────────────────────────────
   if(degradeAnimating && bacteriaGroup.visible){
+    var dScale=_dt/16;
     bactRefs.pgn_strands.forEach(m=>{
       if(m.userData.breaking && m.userData.driftVel){
-        m.position.add(m.userData.driftVel);
-        m.material.opacity=Math.max(0,m.material.opacity-0.018);
+        m.position.addScaledVector(m.userData.driftVel,dScale);
+        m.material.opacity=Math.max(0,m.material.opacity-0.018*dScale);
       }
     });
     bactRefs.pgn_nodes.forEach(m=>{
       if(m.userData.breaking && m.userData.driftVel){
-        m.position.add(m.userData.driftVel);
-        m.material.opacity=Math.max(0,(m.material.opacity||1)-0.008);
+        m.position.addScaledVector(m.userData.driftVel,dScale);
+        m.material.opacity=Math.max(0,(m.material.opacity||1)-0.008*dScale);
       }
     });
   }
   // ── Stage 7: osmotic swelling ─────────────────────────────────────────────
   if(swellAnimating){
-    swellT+=0.004;
+    swellT+=_dt*0.00025; // ~4s total at 60fps equivalent
     const sp=Math.min(swellT,1);
-    // Swell to 1.55x — bacterium bulges outward
     bacteriaGroup.scale.setScalar(1.0+sp*0.55);
-    // Membrane brightens and flickers with pressure
     const flicker=0.9+0.3*Math.sin(clk*8+swellT*4);
     if(bactRefs.membraneMats) bactRefs.membraneMats.forEach(m=>{ m.emissiveIntensity=flicker; m.opacity=Math.min(0.95,0.75+sp*0.2); });
-    // Nucleoid dims (gets diluted)
     if(bactRefs.nucleoidMat) bactRefs.nucleoidMat.opacity=Math.max(0.1,0.55-sp*0.4);
     if(swellT>=1) swellAnimating=false;
   }
   // ── Stage 8: burst pieces fly outward ────────────────────────────────────
   if(burstAnimating){
-    burstT+=0.013;
+    var bScale=_dt/16; // normalise to 60fps
+    burstT+=_dt*0.0008;
     burstPieces.forEach(m=>{
-      m.position.add(m.userData.vel);
-      m.rotation.x+=m.userData.spin.x; m.rotation.y+=m.userData.spin.y; m.rotation.z+=m.userData.spin.z;
-      // Slow down (drag) + gravity
-      m.userData.vel.y-=0.0006;
-      m.userData.vel.multiplyScalar(0.998);
-      m.material.opacity=Math.max(0,m.material.opacity-0.0025);
+      m.position.addScaledVector(m.userData.vel,bScale);
+      m.rotation.x+=m.userData.spin.x*bScale; m.rotation.y+=m.userData.spin.y*bScale; m.rotation.z+=m.userData.spin.z*bScale;
+      m.userData.vel.y-=0.0006*bScale;
+      m.userData.vel.multiplyScalar(Math.pow(0.998,bScale));
+      m.material.opacity=Math.max(0,m.material.opacity-0.0025*bScale);
     });
     if(burstT>3.5){ burstAnimating=false; burstGroup.visible=false; }
   }
   // ── Stage 8: cytoplasm cloud expands ─────────────────────────────────────
   if(cytoAnimating){
-    cytoT+=0.014;
+    var cScale=_dt/16;
+    cytoT+=_dt*0.00088;
     const cpa=cytoCloudGeo.attributes.position.array;
     for(let ci=0;ci<cytoCloudN;ci++){
-      cpa[ci*3]  +=cytoVels[ci].x; cpa[ci*3+1]+=cytoVels[ci].y; cpa[ci*3+2]+=cytoVels[ci].z;
-      cytoVels[ci].multiplyScalar(0.997);
+      cpa[ci*3]  +=cytoVels[ci].x*cScale; cpa[ci*3+1]+=cytoVels[ci].y*cScale; cpa[ci*3+2]+=cytoVels[ci].z*cScale;
+      cytoVels[ci].multiplyScalar(Math.pow(0.997,cScale));
     }
     cytoCloudGeo.attributes.position.needsUpdate=true;
     cytoCloudMat.opacity=Math.max(0, 0.85-cytoT*0.28);
@@ -2410,10 +2416,11 @@ function render(){
   }
   // ── Stage 8: shockwave ring expands ──────────────────────────────────────
   if(shockAnimating){
-    shockT+=0.022;
+    var sScale=_dt/16;
+    shockT+=_dt*0.00138;
     shockwaveMesh.scale.setScalar(0.5+shockT*12);
     shockwaveMesh.material.opacity=Math.max(0, 0.9-shockT*1.1);
-    shockwaveMesh.rotation.x+=0.03; shockwaveMesh.rotation.y+=0.02;
+    shockwaveMesh.rotation.x+=0.03*sScale; shockwaveMesh.rotation.y+=0.02*sScale;
     if(shockT>0.8){ shockAnimating=false; shockwaveMesh.visible=false; }
   }
   // dynamic lights
@@ -2430,8 +2437,8 @@ function render(){
   if(renderer.xr.isPresenting){
     for(var gi=0; gi<controllers.length; gi++){
       var ct = controllers[gi];
-      if(ct.userData.ring1) ct.userData.ring1.rotation.z += 0.04;
-      if(ct.userData.ring2) ct.userData.ring2.rotation.y += 0.055;
+      if(ct.userData.ring1) ct.userData.ring1.rotation.z += 0.04*_fs;
+      if(ct.userData.ring2) ct.userData.ring2.rotation.y += 0.055*_fs;
       // Pulse glow when gripping
       if(ct.userData.glowMat){
         var gripping = ctrlState[gi].grip;
