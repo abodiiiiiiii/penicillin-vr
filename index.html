@@ -45,16 +45,7 @@ body{background:#08000f;overflow:hidden;font-family:'Share Tech Mono',monospace;
   transition:all .2s;display:block}
 #vr-btn:hover{background:rgba(255,50,80,.25);box-shadow:0 0 30px rgba(255,50,80,.4)}
 #vrdebug{position:absolute;bottom:78px;right:14px;font-family:'Share Tech Mono',monospace;font-size:8px;color:rgba(255,180,100,.7);letter-spacing:.4px;line-height:1.8;pointer-events:none;text-align:right}
-/* METER */
-#em{position:absolute;bottom:14px;right:14px;width:182px}
-.ml{display:flex;justify-content:space-between;font-size:8px;margin-bottom:4px}
-.ml span:first-child{color:rgba(240,192,208,.42);text-transform:uppercase;letter-spacing:1px}
-.ml span:last-child{color:#fff;font-weight:700}
-.mb{height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;margin-bottom:9px}
-.mf{height:100%;border-radius:2px;transition:width 1.3s ease;width:0}
-.mf.b{background:linear-gradient(90deg,#ff3355,#ff8844)}
-.mf.a{background:linear-gradient(90deg,#cc44ff,#ff3355)}
-.mf.i{background:linear-gradient(90deg,#ff7722,#ffcc00)}
+
 /* STAGES */
 #stg{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
   display:flex;gap:5px;background:rgba(6,0,14,.8);
@@ -185,15 +176,7 @@ body{background:#08000f;overflow:hidden;font-family:'Share Tech Mono',monospace;
     <div class="ph">// Molecule Scale</div>
     <input type="range" id="scl" min="0.4" max="2.5" step="0.05" value="1.0" style="width:100%;accent-color:#ff3355;cursor:pointer" oninput="rescale(this.value)">
   </div>
-  <div id="em" class="pnl">
-    <div class="ph">// Binding Metrics</div>
-    <div class="ml"><span>Binding Energy</span><span id="v1">—</span></div>
-    <div class="mb"><div class="mf b" id="m1"></div></div>
-    <div class="ml"><span>Affinity ΔG</span><span id="v2">—</span></div>
-    <div class="mb"><div class="mf a" id="m2"></div></div>
-    <div class="ml"><span>% Inhibition</span><span id="v3">—</span></div>
-    <div class="mb"><div class="mf i" id="m3"></div></div>
-  </div>
+
   <div id="stg">
     <button class="sb on" onclick="goStage(0)">① Free Drug</button>
     <button class="sb" onclick="goStage(1)">② Approach</button>
@@ -759,17 +742,10 @@ PEN_BONDS.forEach(([a,b,o])=>{
   makeBond(pa,pb,col, isBeta?0.10:0.07, o);
 });
 
-// β-lactam glow ring
-const blRing = new THREE.Mesh(
-  new THREE.TorusGeometry(0.75,0.04,10,42),
-  new THREE.MeshBasicMaterial({color:0x33ee77,transparent:true,opacity:0.7})
-);
-// Position at centroid of BETA atoms
-let bcx=0,bcy=0,bcz=0,bc=0;
-PEN_ATOMS.forEach(at=>{if(BETA_ATOMS.has(at.i)){bcx+=at.x;bcy+=at.y;bcz+=at.z;bc++;}});
-blRing.position.set(bcx/bc,bcy/bc,bcz/bc);
-blRing.rotation.x=0.4; blRing.rotation.z=0.2;
-molGroup.add(blRing);
+
+
+// blRing stub (ring removed)
+const blRing = { material: { color: { setHex: function(){} }, opacity: 0 }, rotation: { y: 0 } };
 
 // VdW surface
 const surfMesh = new THREE.Mesh(
@@ -1542,7 +1518,7 @@ function goStage(n){
   document.getElementById('s-title').textContent=s.title;
   document.getElementById('s-desc').textContent=s.desc;
   renderILog(n);
-  setBar('m1','v1',s.b); setBar('m2','v2',s.a); setBar('m3','v3',s.i);
+
 
   // In VR: always lock view to face the molecular scene so docking is visible
   if(renderer.xr.isPresenting){
@@ -1925,13 +1901,7 @@ function goStage(n){
   if(typeof vrMenu!=='undefined') vrMenu.draw();
 }
 
-function setBar(id,vid,pct){
-  const b=document.getElementById(id),v=document.getElementById(vid);
-  let c=parseFloat(b.style.width)||0;
-  const step=()=>{c+=(pct-c)*0.065; b.style.width=c.toFixed(1)+'%'; v.textContent=Math.round(c)+'%';
-    if(Math.abs(c-pct)>0.4)requestAnimationFrame(step);};
-  step();
-}
+
 
 // ═══════════════════════════ 2D DIAGRAM SYSTEM ═════════════════════════════
 
