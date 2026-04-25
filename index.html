@@ -445,9 +445,6 @@ for(var ci=0; ci<2; ci++){
 
     controllers.push(ctrl);
 
-    // Per-controller scale-drag state
-    ctrlState[i].scaleDrag = false;
-
     ctrl.addEventListener('selectstart', function(){
       var origin = new THREE.Vector3().setFromMatrixPosition(ctrl.matrixWorld);
       var dir = new THREE.Vector3(0,0,-1).applyMatrix4(
@@ -491,17 +488,19 @@ for(var ci=0; ci<2; ci++){
           return;
         }
 
-        // ── Scale track — begin drag ──────────────────────────────────────
-        var scaleHits2 = ray.intersectObject(vrMenu.scaleTrackMesh, false);
-        if(scaleHits2.length){
-          ctrlState[i].scaleDrag = true;  // mark drag active — render loop handles continuous update
-          // Cache the track's world X center at drag start so the render loop
-          // can project the controller position directly even if the ray misses
-          ctrlState[i].scaleDragMenuWX = vrMenu.mesh.getWorldPosition(new THREE.Vector3()).x;
-          // Apply immediately on press too
-          var lx = scaleHits2[0].point.x - ctrlState[i].scaleDragMenuWX;
-          var pct2 = Math.max(0, Math.min(1, (lx + vrMenu.MW/2) / vrMenu.MW));
-          var ns = (0.4 + pct2*(2.5-0.4)).toFixed(2);
+        // ── Scale buttons ─────────────────────────────────────────────────
+        var scaleUpHits = ray.intersectObject(vrMenu.scaleUpHit, false);
+        if(scaleUpHits.length){
+          var curS = parseFloat(document.getElementById('scl').value);
+          var ns = Math.min(2.5, curS + 0.2).toFixed(2);
+          document.getElementById('scl').value = ns;
+          rescale(ns); vrMenu.draw();
+          return;
+        }
+        var scaleDownHits = ray.intersectObject(vrMenu.scaleDownHit, false);
+        if(scaleDownHits.length){
+          var curS = parseFloat(document.getElementById('scl').value);
+          var ns = Math.max(0.4, curS - 0.2).toFixed(2);
           document.getElementById('scl').value = ns;
           rescale(ns); vrMenu.draw();
           return;
@@ -547,8 +546,6 @@ for(var ci=0; ci<2; ci++){
 
     // Release: end menu drag or scale drag
     ctrl.addEventListener('selectend', function(){
-      // End scale drag
-      ctrlState[i].scaleDrag = false;
       // End menu drag
       if(vrMenuDrag.active && vrMenuDrag.ctrlIdx === i){
         vrMenuDrag.active = false;
@@ -1492,7 +1489,7 @@ let degradeAnimating=false;
 const STAGES=[
   // Stage 0: Free drug — PBP hidden, far away
   {title:'① Molecular Architecture — Penicillin V',
-   desc:'Introduction to Penicillin V and its bicyclic core. The high ring strain of the 4-membered β-lactam ring makes it a reactive . This strain is key to its mechanism of action. Green atoms = β-lactam/thiazolidine core.',
+   desc:'Introduction to Penicillin V and its bicyclic core. The high ring strain of the 4-membered β-lactam ring makes it a reactive "chemical warhead". This strain is key to its mechanism of action. Green atoms = β-lactam/thiazolidine core.',
    b:0,a:0,i:0, pbp:false,hb:false, pbpX:18, pbpZ:-22, pbpRY: 0.5},
   // Stage 1: Approach — PBP swings in from upper-right, cleft rotating to face C7
   {title:'② Electrostatic Attraction',
@@ -1511,17 +1508,17 @@ const STAGES=[
    desc:'A permanent Covalent Ester Bond is formed between Penicillin V and the Serine residue: Ser–O–C(=O)–Penicillin. This creates the Acyl-Enzyme Complex, irreversibly deactivating PBP. The active site is completely and permanently blocked.',
    b:99,a:98,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY: 0.0},
   // Stages 5-8: bacteria scenes
-  {title:'⑥ System Blockage — Wall Synthesis Blockage',
+  {title:'⑥ System Blockage — Wall Synthesis Halted',
    desc:'The inhibited PBP can no longer perform cross-linking of the peptidoglycan mesh (shown in green), halting bacterial cell wall construction. With no new crosslinks forming, the wall begins to structurally weaken and degrade.',
    b:99,a:99,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY:0.0},
   {title:'⑦ Structural Failure — Wall Breaks Down',
    desc:'The final collapse of the wall lattice begins. The bacteria\'s own enzymes (autolysins) keep cutting old wall strands, but PBP can no longer replace them. The integrity of the bacterial cell is lost as it fails to hold its internal pressure (~5 atm).',
    b:99,a:99,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY:0.0},
   {title:'⑧ Osmotic Lysis — The Swelling',
-   desc:'Without a rigid cell wall for support, Water rushes in by osmosis, causing the cell to swell rapidly. The membrane is close to rupture.',
+   desc:'Without a rigid cell wall for support, the bacterial membrane bulges outward under the ~5 atm internal turgor pressure. Water rushes in by osmosis, causing the cell to swell rapidly. The membrane is close to rupture.',
    b:99,a:99,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY:0.0},
   {title:'⑨ Bacteriolysis Complete — Cell Death',
-   desc:'The bacterial cell membrane ruptures, releasing all cellular contents — DNA, ribosomes, and enzymes — into the bloodstream. This confirms the Bactericidal effect of Penicillin V: it kills bacteria, not merely slows their growth.',
+   desc:'The bacterial cell membrane ruptures, releasing all cellular contents — DNA, ribosomes, and enzymes — into the bloodstream. This confirms the Bactericidal effect of Penicillin V: it kills bacteria outright, not merely slows their growth.',
    b:99,a:99,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY:0.0},
 ];
 let curStage=0;
@@ -2117,7 +2114,8 @@ const vrMenu = (function(){
   ];
 
   const BTN_H=40, BTN_W=228, MARGIN=16, TOGGLE_TOP=72;
-  const STAGE_TOP = TOGGLE_TOP + 3*(BTN_H+8) + 52; // below toggles + scale section
+  const SCALE_SEC_H = 75; // label(10) + subtitle(13) + gap(7) + button(40) + gap(5)
+  const STAGE_TOP = TOGGLE_TOP + 3*(BTN_H+8) + SCALE_SEC_H;
 
   function rr(x,y,w,h,r){
     ctx.beginPath();
@@ -2163,19 +2161,24 @@ const vrMenu = (function(){
         ctx.textAlign='right'; ctx.fillText('ON',x+BTN_W-10,y+BTN_H/2+4); }
     });
 
-    // ── SCALE SLIDER ─────────────────────────────────────────────────────
+    // ── SCALE BUTTONS ────────────────────────────────────────────────────
     var scaleSecY = TOGGLE_TOP + 3*(BTN_H+7) + 10;
     ctx.fillStyle='rgba(255,50,80,0.7)'; ctx.font='bold 10px monospace'; ctx.textAlign='left';
     ctx.fillText('// MOLECULE SCALE', MARGIN, scaleSecY);
     var scl=parseFloat(document.getElementById('scl').value);
-    var pct=(scl-0.4)/(2.5-0.4);
-    var tx=MARGIN, tw=W-MARGIN*2, ty=scaleSecY+16, th=8;
-    ctx.fillStyle='rgba(255,255,255,0.07)'; rr(tx,ty,tw,th,4); ctx.fill();
-    ctx.fillStyle='#ff3355'; rr(tx,ty,tw*pct,th,4); ctx.fill();
-    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(tx+tw*pct,ty+th/2,9,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#ff3355'; ctx.beginPath(); ctx.arc(tx+tw*pct,ty+th/2,5,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='rgba(240,192,208,0.5)'; ctx.font='9px monospace'; ctx.textAlign='right';
-    ctx.fillText('Scale: '+scl+'x', W-MARGIN, ty-3);
+    ctx.fillStyle='rgba(240,192,208,0.55)'; ctx.font='9px monospace'; ctx.textAlign='center';
+    ctx.fillText('Current: '+scl.toFixed(2)+'x', W/2, scaleSecY+13);
+    var sBtnW=(W-MARGIN*2-10)/2, sBtnH=BTN_H, sBtnY=scaleSecY+20;
+    // Scale Down button
+    ctx.fillStyle='rgba(255,50,80,0.10)'; ctx.strokeStyle='rgba(255,50,80,0.45)'; ctx.lineWidth=1.5;
+    rr(MARGIN, sBtnY, sBtnW, sBtnH, 5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#ff3355'; ctx.font='bold 14px monospace'; ctx.textAlign='center';
+    ctx.fillText('▼  Scale Down', MARGIN+sBtnW/2, sBtnY+sBtnH/2+5);
+    // Scale Up button
+    ctx.fillStyle='rgba(255,50,80,0.10)'; ctx.strokeStyle='rgba(255,50,80,0.45)'; ctx.lineWidth=1.5;
+    rr(MARGIN+sBtnW+10, sBtnY, sBtnW, sBtnH, 5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#ff3355'; ctx.font='bold 14px monospace'; ctx.textAlign='center';
+    ctx.fillText('▲  Scale Up', MARGIN+sBtnW+10+sBtnW/2, sBtnY+sBtnH/2+5);
 
     // ── INTERACTION STAGES ───────────────────────────────────────────────
     ctx.strokeStyle='rgba(255,50,80,0.25)'; ctx.lineWidth=1;
@@ -2200,7 +2203,7 @@ const vrMenu = (function(){
     ctx.strokeStyle='rgba(255,50,80,0.2)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(14,H-28); ctx.lineTo(W-14,H-28); ctx.stroke();
     ctx.fillStyle='rgba(150,180,255,0.45)'; ctx.font='9px monospace'; ctx.textAlign='center';
-    ctx.fillText('GRIP top bar to move • TRIGGER to select', W/2, H-10);
+    ctx.fillText('GRIP bar=move  •  TRIGGER=select', W/2, H-10);
 
     tex.needsUpdate=true;
   }
@@ -2232,9 +2235,12 @@ const vrMenu = (function(){
     hitMeshes.push(mkHit(x,y,BTN_W,BTN_H,{vrMenuBtn:btn.key}));
   });
 
-  // Scale track
-  var scaleSecY2=TOGGLE_TOP+3*(BTN_H+7)+16;
-  var scaleHit=mkHit(MARGIN,scaleSecY2,W-MARGIN*2,18,{vrMenuScale:true});
+  // Scale buttons — positions must match draw() exactly
+  var sBtnW2=(W-MARGIN*2-10)/2, sBtnH2=BTN_H;
+  var sBtnY2=TOGGLE_TOP+3*(BTN_H+7)+10+20; // scaleSecY+20
+  var scaleDownHit=mkHit(MARGIN, sBtnY2, sBtnW2, sBtnH2, {vrScaleDown:true});
+  var scaleUpHit  =mkHit(MARGIN+sBtnW2+10, sBtnY2, sBtnW2, sBtnH2, {vrScaleUp:true});
+  var scaleHit = scaleDownHit; // keep reference for return (unused but kept for compat)
 
   // Stage buttons
   var stageHits=[];
@@ -2250,6 +2256,7 @@ const vrMenu = (function(){
   return {
     mesh:mesh, draw:draw,
     hitMeshes:hitMeshes, scaleTrackMesh:scaleHit,
+    scaleDownHit:scaleDownHit, scaleUpHit:scaleUpHit,
     grabHit:grabHit, MW:MW, MH:MH
   };
 })();
@@ -2571,32 +2578,7 @@ function render(){
             ? 0.9 + 0.3 * Math.sin(clk * 6)
             : 0.45 + 0.15 * Math.sin(clk * 1.8 + gi);
       }
-      // ── Continuous scale drag — update every frame while trigger held ──
-      // Uses controller world-X projected onto the track so dragging keeps
-      // working even when the hand moves outside the scaleTrackMesh bounds.
-      if(ctrlState[gi].scaleDrag && vrMenuVisible && vrMenu.scaleTrackMesh){
-        var menuWX = ctrlState[gi].scaleDragMenuWX !== undefined
-          ? ctrlState[gi].scaleDragMenuWX
-          : vrMenu.mesh.getWorldPosition(new THREE.Vector3()).x;
-
-        var sdOrigin = new THREE.Vector3().setFromMatrixPosition(ct.matrixWorld);
-        var sdDir = new THREE.Vector3(0,0,-1).applyMatrix4(
-          new THREE.Matrix4().extractRotation(ct.matrixWorld)
-        );
-        var sdRay = new THREE.Raycaster(); sdRay.set(sdOrigin, sdDir);
-        var sdHits = sdRay.intersectObject(vrMenu.scaleTrackMesh, false);
-
-        // Prefer accurate ray hit; fall back to controller X projection so
-        // the knob never freezes when the hand drifts off the track mesh.
-        var trackX = sdHits.length
-          ? sdHits[0].point.x - menuWX
-          : sdOrigin.x - menuWX;
-
-        var pct3 = Math.max(0, Math.min(1, (trackX + vrMenu.MW/2) / vrMenu.MW));
-        var ns2 = (0.4 + pct3*(2.5-0.4)).toFixed(2);
-        document.getElementById('scl').value = ns2;
-        rescale(ns2); vrMenu.draw();
-      }
+      // (scale handled via buttons in selectstart)
     }
   }
   // ── VR menu billboarding — always face camera (only when not being dragged / parented to ctrl) ──
@@ -2618,6 +2600,26 @@ function render(){
           rX += gd.y * 2.8;
         }
         ctrlState[gi].prevPos = gpos.clone();
+      }
+    }
+  }
+  // ── Thumbstick scale: right stick Y axis scales the molecule ─────────────
+  if(renderer.xr.isPresenting){
+    var session = renderer.xr.getSession();
+    if(session && session.inputSources){
+      for(var si=0; si<session.inputSources.length; si++){
+        var src = session.inputSources[si];
+        if(src && src.gamepad && src.handedness === 'right'){
+          // Axis 3 = right thumbstick Y (negative = up, positive = down on Quest)
+          var thumbY = src.gamepad.axes[3] || 0;
+          if(Math.abs(thumbY) > 0.12){ // dead zone
+            var curS = parseFloat(document.getElementById('scl').value);
+            var newS = Math.max(0.4, Math.min(2.5, curS - thumbY * 0.018));
+            document.getElementById('scl').value = newS.toFixed(2);
+            rescale(newS.toFixed(2));
+            vrMenu.draw();
+          }
+        }
       }
     }
   }
