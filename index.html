@@ -495,8 +495,11 @@ for(var ci=0; ci<2; ci++){
         var scaleHits2 = ray.intersectObject(vrMenu.scaleTrackMesh, false);
         if(scaleHits2.length){
           ctrlState[i].scaleDrag = true;  // mark drag active — render loop handles continuous update
+          // Cache the track's world X center at drag start so the render loop
+          // can project the controller position directly even if the ray misses
+          ctrlState[i].scaleDragMenuWX = vrMenu.mesh.getWorldPosition(new THREE.Vector3()).x;
           // Apply immediately on press too
-          var lx = scaleHits2[0].point.x - vrMenu.mesh.getWorldPosition(new THREE.Vector3()).x;
+          var lx = scaleHits2[0].point.x - ctrlState[i].scaleDragMenuWX;
           var pct2 = Math.max(0, Math.min(1, (lx + vrMenu.MW/2) / vrMenu.MW));
           var ns = (0.4 + pct2*(2.5-0.4)).toFixed(2);
           document.getElementById('scl').value = ns;
@@ -2568,22 +2571,31 @@ function render(){
             ? 0.9 + 0.3 * Math.sin(clk * 6)
             : 0.45 + 0.15 * Math.sin(clk * 1.8 + gi);
       }
-      // ── Continuous scale drag — update every frame while trigger held over track ──
+      // ── Continuous scale drag — update every frame while trigger held ──
+      // Uses controller world-X projected onto the track so dragging keeps
+      // working even when the hand moves outside the scaleTrackMesh bounds.
       if(ctrlState[gi].scaleDrag && vrMenuVisible && vrMenu.scaleTrackMesh){
+        var menuWX = ctrlState[gi].scaleDragMenuWX !== undefined
+          ? ctrlState[gi].scaleDragMenuWX
+          : vrMenu.mesh.getWorldPosition(new THREE.Vector3()).x;
+
         var sdOrigin = new THREE.Vector3().setFromMatrixPosition(ct.matrixWorld);
         var sdDir = new THREE.Vector3(0,0,-1).applyMatrix4(
           new THREE.Matrix4().extractRotation(ct.matrixWorld)
         );
         var sdRay = new THREE.Raycaster(); sdRay.set(sdOrigin, sdDir);
         var sdHits = sdRay.intersectObject(vrMenu.scaleTrackMesh, false);
-        if(sdHits.length){
-          var menuWX = vrMenu.mesh.getWorldPosition(new THREE.Vector3()).x;
-          var lx2 = sdHits[0].point.x - menuWX;
-          var pct3 = Math.max(0, Math.min(1, (lx2 + vrMenu.MW/2) / vrMenu.MW));
-          var ns2 = (0.4 + pct3*(2.5-0.4)).toFixed(2);
-          document.getElementById('scl').value = ns2;
-          rescale(ns2); vrMenu.draw();
-        }
+
+        // Prefer accurate ray hit; fall back to controller X projection so
+        // the knob never freezes when the hand drifts off the track mesh.
+        var trackX = sdHits.length
+          ? sdHits[0].point.x - menuWX
+          : sdOrigin.x - menuWX;
+
+        var pct3 = Math.max(0, Math.min(1, (trackX + vrMenu.MW/2) / vrMenu.MW));
+        var ns2 = (0.4 + pct3*(2.5-0.4)).toFixed(2);
+        document.getElementById('scl').value = ns2;
+        rescale(ns2); vrMenu.draw();
       }
     }
   }
