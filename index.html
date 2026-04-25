@@ -169,7 +169,7 @@ body{background:#08000f;overflow:hidden;font-family:'Share Tech Mono',monospace;
     <button class="cb on" id="b-rot" onclick="tog('rot')">⟳ Auto Rotate</button>
     <button class="cb" id="b-pbp" onclick="tog('pbp')">◈ PBP-2X Protein</button>
     <button class="cb" id="b-hb"  onclick="tog('hb')">⬡ H-Bond Network</button>
-    <button class="cb" id="b-sur" onclick="tog('sur')">◉ VdW Surface</button>
+    <button class="cb on" id="b-bnd" onclick="tog('bnd')">― Show Bonds</button>
     <button class="cb" id="b-rbc" onclick="tog('rbc')">◌ Blood Cells</button>
     <button class="cb" id="b-lbl" onclick="tog('lbl')">⊞ Atom Labels</button>
     <div class="dv"></div>
@@ -244,21 +244,36 @@ const PEN_ATOMS=[
 ];
 const PEN_BONDS=[[0,8,1],[0,9,1],[1,12,2],[2,15,1],[2,34,1],[3,15,2],[4,16,2],[5,17,1],[5,18,1],[6,8,1],[6,10,1],[6,12,1],[7,11,1],[7,16,1],[7,33,1],[8,11,1],[8,24,1],[9,10,1],[9,13,1],[9,14,1],[10,15,1],[10,25,1],[11,12,1],[11,26,1],[13,27,1],[13,28,1],[13,29,1],[14,30,1],[14,31,1],[14,32,1],[16,17,1],[17,35,1],[17,36,1],[18,19,2],[18,20,1],[19,21,1],[19,37,1],[20,22,2],[20,38,1],[21,23,2],[21,39,1],[22,23,1],[22,40,1],[23,41,1]];
 
-// Align PBP so Ser370 sits near C7 when pbpX = 0 (more accurate attachment)
-const SER370_LOCAL = new THREE.Vector3(-1.8, 0.1, 1.8);
-const C7_LOCAL = new THREE.Vector3(PEN_ATOMS[12].x, PEN_ATOMS[12].y, PEN_ATOMS[12].z);
+// ── PBP approach geometry ─────────────────────────────────────────────────
+// Penicillin C7 (the electrophilic carbonyl carbon) is the attack point.
+// PBP must approach so its cleft MOUTH faces C7 without the protein bulk
+// passing through the drug. We move PBP along a combined X+Z arc:
+//   • Start: far right (+X) AND behind (+Z) — protein bulk clear of molecule
+//   • Approach stages: slide in along X while rotating Y so cleft faces C7
+//   • Dock (stage 4): Ser370 touches C7 from the +Z side; protein stays +Z
+//
+// SER370_LOCAL = position of Ser370 in pbpGroup local space (scaled coords)
+const SER370_LOCAL = new THREE.Vector3(-6.3, 1.4, 9.8);
+const C7_LOCAL     = new THREE.Vector3(PEN_ATOMS[12].x, PEN_ATOMS[12].y, PEN_ATOMS[12].z);
+
+// PBP_ALIGN: world-space offset so that when pbpGroup.position = PBP_ALIGN + (pbpX, 0, pbpZ),
+// Ser370 world pos = C7 world pos + (pbpX, 0, pbpZ).
+// At full dock we want Ser370 ~2.2 units in front of C7 along Z (not overlapping).
+const DOCK_Z_OFFSET = 2.2; // Ser370 stops this far in front of C7 (along +Z)
 const PBP_ALIGN = new THREE.Vector3(
   C7_LOCAL.x - SER370_LOCAL.x,
   C7_LOCAL.y - SER370_LOCAL.y,
-  C7_LOCAL.z - SER370_LOCAL.z
+  C7_LOCAL.z - SER370_LOCAL.z - DOCK_Z_OFFSET  // pulled back so bulk is behind C7
 );
 const PBP_FLOAT_Y = 0.22;
 const PBP_CA=[[1.34,-2.262,-0.481],[1.524,-1.825,-0.344],[1.47,-1.606,0.096],[1.227,-1.186,0.189],[1.473,-0.911,0.519],[1.314,-0.542,0.81],[1.532,-0.096,0.772],[1.892,-0.222,1.088],[1.989,-0.696,1.012],[1.654,-0.96,1.263],[1.49,-1.302,0.941],[1.002,-1.371,0.918],[0.989,-1.695,0.545],[1.402,-1.97,0.523],[1.515,-2.358,0.242],[1.547,-2.744,0.549],[1.641,-3.103,0.225],[1.697,-3.586,0.316],[1.951,-3.972,0.141],[1.769,-4.431,0.191],[2.11,-4.791,0.184],[2.15,-5.047,-0.236],[2.577,-5.257,-0.148],[2.425,-5.661,-0.313],[2.698,-5.77,-0.677],[2.678,-6.191,-0.472],[2.744,-6.535,-0.817],[2.504,-6.519,-1.252],[2.907,-6.424,-1.434],[3.076,-6.043,-1.647],[3.557,-6.11,-1.747],[3.532,-5.677,-2.0],[3.844,-5.861,-2.311],[4.151,-5.991,-1.951],[4.03,-5.769,-1.519],[3.813,-5.99,-1.15],[3.453,-5.675,-1.059],[3.389,-5.847,-0.621],[3.687,-6.02,-0.295],[3.544,-6.5,-0.197],[3.554,-6.713,0.254],[4.055,-6.689,0.301],[3.979,-6.242,0.506],[3.487,-6.269,0.572],[3.554,-6.084,1.025],[3.739,-5.66,0.84],[3.297,-5.471,0.731],[3.147,-5.644,1.169],[3.534,-5.43,1.391],[3.415,-5.007,1.164],[2.932,-5.055,1.257],[3.038,-5.093,1.741],[3.254,-4.654,1.825],[2.975,-4.42,1.489],[2.525,-4.622,1.471],[2.551,-4.798,1.936],[2.361,-5.226,1.776],[2.462,-5.684,1.932],[2.841,-5.886,1.686],[2.527,-6.266,1.666],[2.189,-6.054,1.367],[2.548,-5.912,1.061],[2.739,-6.367,1.047],[2.305,-6.606,1.031],[2.0,-6.321,0.763],[2.38,-6.299,0.444],[2.57,-6.758,0.457],[2.153,-7.0,0.333],[2.078,-6.994,-0.166],[1.798,-6.669,-0.29],[2.159,-6.666,-0.625],[2.072,-6.201,-0.608],[1.983,-5.886,-0.253],[1.769,-6.011,0.169],[1.763,-5.539,0.138],[1.836,-5.502,0.64],[1.434,-5.315,0.858],[1.308,-5.044,1.253],[1.738,-4.858,1.407],[1.981,-4.691,1.013],[1.572,-4.53,0.785],[1.578,-4.049,0.68],[2.049,-3.924,0.753],[2.261,-3.48,0.804],[2.631,-3.305,0.523],[2.956,-3.342,0.895],[2.841,-3.822,0.935],[2.799,-3.926,0.454],[3.184,-3.727,0.22],[3.456,-3.89,0.596],[3.281,-4.352,0.542],[3.426,-4.3,0.073],[3.864,-4.136,0.232],[3.855,-4.507,0.564],[3.778,-4.867,0.236],[4.041,-4.691,-0.144],[4.514,-4.546,-0.139],[4.758,-4.882,0.133],[4.372,-5.196,0.115],[3.939,-5.372,-0.066],[3.666,-5.213,-0.451],[3.22,-5.341,-0.62],[2.981,-5.084,-0.274],[2.691,-4.7,-0.394],[2.309,-4.416,-0.258],[1.924,-4.208,-0.485],[1.763,-3.744,-0.4],[1.346,-3.632,-0.16],[1.14,-3.175,-0.186],[0.915,-2.952,0.199],[0.791,-2.492,0.338],[0.898,-2.466,0.823],[0.724,-2.037,0.99],[0.984,-1.918,1.402],[0.624,-1.636,1.586],[0.159,-1.799,1.602],[-0.152,-1.417,1.606],[0.102,-1.063,1.374],[-0.031,-0.843,0.953],[-0.311,-1.254,0.925],[-0.563,-1.155,0.51],[-0.261,-0.786,0.376],[0.069,-1.149,0.289],[-0.03,-1.562,0.038],[-0.002,-2.041,0.147],[0.271,-2.236,-0.218],[0.016,-2.659,-0.178],[0.226,-3.034,-0.429],[0.043,-3.062,-0.888],[-0.208,-3.465,-1.032],[0.126,-3.56,-1.384],[0.052,-3.992,-1.609],[0.536,-4.023,-1.714],[0.779,-3.916,-1.298],[0.514,-3.989,-0.888],[0.698,-3.571,-0.687],[0.854,-3.114,-0.823],[0.631,-2.739,-0.573],[0.291,-2.447,-0.798],[-0.121,-2.232,-0.628],[-0.269,-1.791,-0.806],[-0.625,-1.76,-0.461],[-0.331,-1.445,-0.218],[0.094,-1.194,-0.219],[0.265,-1.51,-0.563],[0.042,-1.205,-0.886],[0.555,-1.049,-0.866],[0.631,-1.485,-1.098],[1.04,-1.327,-1.376],[1.251,-1.41,-0.957],[1.396,-1.868,-1.067],[1.569,-2.061,-1.486],[1.638,-2.542,-1.659],[2.084,-2.754,-1.638],[2.305,-2.852,-2.068],[2.299,-3.25,-2.396],[2.764,-3.424,-2.368],[2.601,-3.671,-1.98],[2.262,-3.887,-2.271],[2.604,-4.018,-2.606],[2.871,-4.256,-2.266],[2.462,-4.49,-2.104],[2.353,-4.617,-2.567],[2.8,-4.781,-2.693],[2.951,-4.997,-2.257],[2.872,-5.443,-2.059],[2.397,-5.311,-2.104],[2.461,-5.461,-2.549],[2.05,-5.216,-2.676],[2.314,-5.181,-3.074],[2.057,-4.875,-3.297],[1.914,-4.496,-3.012],[1.836,-4.382,-2.537],[1.63,-3.978,-2.363],[1.963,-3.915,-2.0],[1.941,-3.421,-2.041],[1.529,-3.463,-1.766],[1.886,-3.38,-1.413],[1.6,-3.117,-1.11],[1.879,-2.714,-1.081],[1.819,-2.428,-0.698],[2.08,-2.043,-0.881],[1.721,-1.708,-0.845],[1.851,-1.248,-0.726],[1.76,-1.138,-0.255],[1.439,-0.763,-0.235],[1.444,-0.452,0.148],[0.975,-0.36,0.265],[0.944,0.082,0.485],[0.729,-0.145,0.87],[0.948,-0.088,1.312],[0.952,-0.5,1.586],[1.012,-0.288,2.031],[0.638,0.028,1.939],[0.372,-0.321,1.71],[0.425,-0.664,2.059],[0.26,-0.322,2.379],[-0.11,-0.191,2.083],[-0.26,-0.657,2.004],[-0.286,-0.724,2.49],[-0.504,-0.282,2.551],[-0.838,-0.382,2.204],[-0.95,-0.817,2.41],[-1.018,-0.596,2.846],[-1.278,-0.247,2.611],[-1.54,-0.59,2.365],[-1.678,-0.83,2.773],[-1.789,-0.393,2.981],[-2.08,-0.184,2.638],[-2.237,-0.613,2.44],[-2.218,-0.408,1.993],[-2.274,-0.617,1.55],[-1.934,-0.526,1.199],[-1.6,-0.232,1.424],[-1.189,-0.049,1.222],[-0.831,0.268,1.348],[-0.433,0.401,1.092],[-0.097,0.7,1.299],[0.159,0.897,0.923],[0.528,1.225,0.899],[0.425,1.694,0.784],[0.849,1.826,0.563],[0.917,1.414,0.302],[0.455,1.254,0.223],[0.623,0.801,0.328],[0.312,0.498,0.571],[0.537,0.374,0.995],[0.198,0.05,1.152],[-0.253,-0.12,1.034],[-0.568,-0.391,1.299],[-1.0,-0.595,1.161],[-1.365,-0.815,1.406],[-1.555,-1.264,1.321],[-1.097,-1.413,1.198],[-0.807,-1.809,1.238],[-0.374,-1.947,1.435],[0.008,-1.985,1.12],[0.26,-2.367,1.313],[-0.079,-2.72,1.268],[-0.467,-2.537,1.023],[-0.764,-2.577,1.416],[-1.063,-2.207,1.298],[-1.166,-2.329,0.834],[-1.378,-2.714,1.062],[-1.855,-2.572,1.056],[-2.037,-2.198,0.791],[-1.666,-1.888,0.676],[-1.759,-1.545,0.33],[-1.367,-1.458,0.039],[-1.436,-0.969,0.012],[-1.109,-0.663,0.224],[-1.388,-0.28,0.369],[-1.01,0.03,0.282],[-1.085,0.045,-0.208],[-1.395,-0.318,-0.34],[-1.799,-0.111,-0.145],[-1.938,0.349,-0.261],[-2.237,0.574,0.064],[-2.469,0.992,0.178],[-2.149,1.232,0.472],[-2.362,1.475,0.84],[-2.261,1.905,1.053],[-1.786,1.788,0.98],[-1.858,1.986,0.532],[-1.906,2.438,0.722],[-1.416,2.48,0.782],[-1.421,2.498,0.286],[-1.811,2.802,0.256],[-1.612,3.105,0.593],[-1.184,3.104,0.346],[-1.426,3.174,-0.079],[-1.655,3.581,0.087],[-1.261,3.783,0.311],[-1.027,3.734,-0.122],[-1.401,3.881,-0.411],[-1.403,4.284,-0.122],[-1.871,4.188,0.015],[-1.773,4.072,0.486],[-1.952,4.467,0.728],[-1.768,4.3,1.155],[-1.997,4.539,1.519],[-2.41,4.612,1.252],[-2.792,4.444,1.52],[-3.13,4.128,1.337],[-3.52,3.897,1.542],[-3.542,3.403,1.549],[-4.029,3.353,1.455],[-4.201,3.028,1.121],[-4.039,3.128,0.67],[-4.404,2.945,0.39],[-4.209,3.027,-0.057],[-4.528,2.814,-0.372],[-4.785,2.457,-0.145],[-4.387,2.239,0.048],[-4.33,2.438,0.498],[-3.861,2.548,0.626],[-3.818,2.517,1.116],[-3.407,2.472,1.386],[-3.363,2.144,1.754],[-3.524,2.478,2.084],[-4.003,2.507,1.958],[-4.042,2.015,1.903],[-4.117,2.031,2.395],[-3.997,2.493,2.526],[-4.283,2.886,2.626],[-4.393,3.371,2.681],[-4.364,3.703,2.314],[-3.999,3.556,2.018],[-3.545,3.678,2.176],[-3.264,4.071,2.058],[-2.809,3.916,1.946],[-2.4,4.114,1.759],[-2.293,3.889,1.328],[-1.859,3.748,1.524],[-2.146,3.526,1.863],[-2.467,3.328,1.549],[-2.073,3.053,1.437],[-1.894,2.994,1.894],[-2.349,2.82,1.981],[-2.381,2.591,1.545],[-2.818,2.797,1.433],[-3.029,2.642,1.012],[-3.278,3.063,0.943],[-2.853,3.292,1.044],[-2.583,3.046,0.717],[-2.931,3.087,0.367],[-2.976,3.578,0.411],[-2.484,3.601,0.398],[-2.557,3.409,-0.052],[-2.943,3.674,-0.219],[-2.643,4.062,-0.167],[-2.276,3.802,-0.379],[-2.532,3.695,-0.788],[-2.744,3.262,-0.897],[-2.489,3.124,-1.3],[-2.112,3.38,-1.111],[-2.133,3.041,-0.752],[-2.133,2.655,-1.064],[-1.703,2.815,-1.253],[-1.501,2.797,-0.804],[-1.7,2.352,-0.736],[-1.458,2.238,-1.15],[-1.027,2.46,-1.05],[-0.966,2.126,-0.69],[-1.001,1.807,-1.07],[-1.405,1.612,-0.863],[-1.637,1.245,-1.09],[-1.243,1.124,-1.361],[-1.066,0.73,-1.115],[-0.598,0.83,-0.998],[-0.298,0.514,-1.23],[-0.147,0.396,-0.771],[0.115,0.019,-0.951],[-0.129,-0.395,-0.834],[-0.438,-0.665,-1.111],[-0.872,-0.473,-1.239],[-1.045,-0.15,-0.908],[-1.492,0.051,-0.875],[-1.616,0.518,-0.966],[-1.981,0.796,-0.793],[-2.326,1.069,-1.01],[-2.375,1.56,-1.028],[-2.814,1.75,-0.893],[-3.106,1.84,-1.284],[-3.171,2.298,-1.469],[-3.564,2.301,-1.171],[-3.551,2.699,-0.871],[-3.709,2.424,-0.491],[-3.366,2.075,-0.55],[-2.985,2.387,-0.617],[-3.134,2.642,-0.219],[-3.086,2.216,0.021],[-2.622,2.164,-0.144],[-2.502,2.537,0.159],[-2.58,2.23,0.537],[-2.466,1.785,0.36],[-2.909,1.56,0.349],[-2.99,1.577,-0.139],[-2.566,1.428,-0.346],[-2.326,0.998,-0.375],[-1.847,1.005,-0.248],[-1.512,0.644,-0.264],[-1.262,0.661,0.167],[-0.836,0.663,-0.084],[-0.95,1.092,-0.305],[-1.135,1.259,0.12],[-0.676,1.198,0.298],[-0.485,1.376,-0.122],[-0.775,1.765,-0.043],[-0.619,1.831,0.424],[-0.144,1.844,0.282],[-0.26,2.269,0.057],[-0.446,2.519,0.44],[-0.06,2.369,0.713],[0.343,2.426,0.432],[0.271,2.909,0.329],[-0.078,2.823,-0.009],[0.226,2.525,-0.264],[-0.052,2.119,-0.346],[0.226,1.707,-0.329],[0.092,1.254,-0.47],[0.085,0.864,-0.161],[0.51,0.622,-0.225],[0.544,0.158,-0.053],[1.004,0.03,-0.188],[1.444,0.21,-0.045],[1.771,-0.053,-0.313],[1.876,-0.495,-0.513],[2.325,-0.691,-0.435],[2.365,-1.084,-0.73],[2.721,-1.427,-0.684],[2.832,-1.366,-1.162],[3.059,-0.967,-1.344],[3.264,-0.695,-0.981],[2.893,-0.366,-0.954],[2.444,-0.269,-0.759],[2.117,0.077,-0.903],[2.028,0.45,-0.587],[1.617,0.697,-0.468],[1.508,1.182,-0.46],[1.086,1.406,-0.33],[0.841,1.468,-0.756],[0.622,1.911,-0.785],[0.19,1.837,-1.012],[0.063,2.316,-1.009],[-0.027,2.737,-0.762],[-0.517,2.764,-0.672],[-0.6,3.094,-0.312],[-0.26,3.434,-0.187],[0.051,3.431,0.199],[-0.204,3.798,0.412],[-0.595,3.499,0.375],[-0.379,3.084,0.531],[-0.205,3.335,0.923],[-0.652,3.522,1.019],[-0.886,3.085,1.0],[-0.571,2.862,1.308],[-0.571,3.253,1.608],[-1.065,3.258,1.594],[-1.071,2.771,1.673],[-0.821,2.849,2.092],[-1.253,3.044,2.24],[-1.509,2.621,2.188],[-1.305,2.519,2.625],[-1.127,2.925,2.842],[-1.572,3.146,2.846],[-1.854,3.037,3.242],[-2.281,3.226,3.076],[-2.293,3.179,2.581],[-2.027,2.767,2.538],[-2.149,2.295,2.468],[-1.734,2.073,2.62],[-1.674,2.312,3.047],[-1.663,1.991,3.422],[-1.984,2.251,3.703],[-1.828,2.001,4.1],[-1.347,2.053,3.977],[-1.149,2.486,3.839],[-0.941,2.292,3.43],[-1.126,2.148,2.986],[-1.231,1.666,2.915],[-0.825,1.599,2.642],[-0.425,1.809,2.843],[0.065,1.728,2.834],[0.332,1.936,3.209],[0.511,2.382,3.107],[0.303,2.392,2.661],[-0.077,2.591,2.418],[-0.333,2.216,2.227],[-0.61,2.395,1.857],[-0.988,2.075,1.824],[-1.448,2.012,1.647],[-1.822,1.689,1.705],[-2.166,1.523,1.393],[-2.589,1.281,1.458],[-2.638,1.143,0.984],[-3.061,0.929,0.853],[-3.055,0.504,0.6],[-3.275,0.484,0.155],[-3.667,0.205,0.046],[-3.666,-0.269,-0.095],[-4.001,-0.266,-0.46],[-4.322,-0.221,-0.084],[-4.419,0.264,-0.086],[-4.177,0.627,0.147],[-3.827,0.635,0.499],[-3.792,0.272,0.837],[-4.022,0.416,1.251],[-3.873,0.346,1.718],[-3.501,0.51,2.001],[-3.294,0.072,1.906],[-3.216,0.228,1.441],[-2.943,0.639,1.385],[-2.483,0.565,1.218],[-2.237,0.81,1.572],[-1.798,0.995,1.433],[-1.435,1.304,1.576],[-1.015,1.511,1.419],[-0.659,1.7,1.705],[-0.256,1.922,1.537],[0.059,1.908,1.922],[0.31,2.33,1.922],[-0.032,2.641,1.744],[0.286,2.996,1.603],[0.575,2.659,1.376],[0.382,2.2,1.364],[0.671,1.801,1.356],[0.307,1.467,1.391],[-0.156,1.414,1.224],[-0.422,1.064,1.452],[-0.87,0.947,1.274],[-1.172,0.644,1.524],[-1.595,0.462,1.342],[-1.921,0.206,1.612],[-2.294,0.073,1.312],[-2.645,-0.13,1.599],[-2.578,-0.107,2.093],[-2.856,-0.252,2.475],[-2.677,0.084,2.79],[-2.371,0.42,2.592],[-2.224,0.834,2.819],[-1.889,1.191,2.795],[-1.668,1.053,3.214],[-1.639,0.609,2.997],[-1.399,0.765,2.594],[-1.102,1.004,2.902],[-0.953,0.583,3.109],[-0.827,0.401,2.664],[-0.668,0.805,2.43],[-0.405,0.985,2.81],[-0.1,0.617,2.932],[0.005,0.522,2.457],[0.057,0.996,2.326],[0.304,1.096,2.742],[0.636,0.752,2.62],[0.638,0.904,2.149],[0.849,1.334,2.279],[1.112,1.113,2.637],[1.331,0.851,2.278],[1.37,1.206,1.933],[1.862,1.138,1.915],[1.907,0.647,1.863],[1.675,0.632,1.426],[1.776,0.626,0.939],[1.672,1.115,0.904],[2.137,1.237,0.771],[2.269,0.962,0.385],[2.104,0.501,0.337],[2.101,0.055,0.548],[2.399,-0.063,0.928],[2.824,0.065,0.707],[2.668,-0.222,0.336],[2.904,0.095,0.046],[3.337,-0.109,0.18],[3.463,0.015,-0.282],[3.205,0.284,-0.604],[3.129,0.171,-1.081],[2.755,0.138,-1.406],[2.447,-0.24,-1.488],[2.287,-0.267,-1.954],[1.82,-0.159,-2.063],[1.805,-0.115,-2.556],[1.387,0.101,-2.71],[1.009,-0.219,-2.765],[0.768,-0.267,-3.193],[0.386,0.01,-3.341],[0.165,-0.429,-3.427],[-0.242,-0.326,-3.164],[-0.179,0.121,-2.965],[-0.487,0.305,-2.626],[-0.434,0.52,-2.184],[-0.574,0.11,-1.95],[-0.252,-0.123,-2.237],[0.185,0.081,-2.359],[0.099,0.448,-2.037],[0.025,0.145,-1.655],[0.401,-0.172,-1.685],[0.706,0.185,-1.824],[0.545,0.409,-1.409],[0.882,0.12,-1.191],[1.113,0.535,-1.353],[0.94,0.99,-1.467],[0.553,0.985,-1.777],[0.323,1.41,-1.889],[-0.014,1.324,-2.249],[-0.443,1.54,-2.366],[-0.792,1.284,-2.124],[-1.159,1.351,-2.446],[-1.109,1.112,-2.87],[-1.354,0.728,-3.059],[-0.933,0.474,-3.022],[-0.671,0.531,-3.44],[-0.405,0.83,-3.741],[-0.058,0.977,-3.416],[0.326,1.181,-3.658],[0.446,1.662,-3.633],[0.644,1.583,-3.183],[0.737,1.105,-3.082],[1.19,0.927,-3.001],[1.376,0.644,-3.364],[1.234,0.168,-3.378],[1.654,0.02,-3.167],[1.914,0.385,-2.96],[2.058,0.279,-2.498],[1.853,0.609,-2.19],[2.144,0.628,-1.79],[1.925,0.648,-1.336],[1.587,0.998,-1.257],[1.594,1.167,-1.72],[1.236,1.434,-1.929],[1.008,1.173,-2.279],[0.627,1.38,-2.515],[0.264,1.096,-2.702],[-0.017,1.421,-2.952],[-0.481,1.25,-2.943],[-0.753,1.308,-3.354],[-1.055,1.67,-3.202],[-0.824,2.099,-3.121],[-1.237,2.266,-2.907],[-0.987,2.636,-2.686],[-0.556,2.795,-2.501],[-0.35,2.486,-2.164],[-0.239,2.599,-1.695],[0.247,2.675,-1.768],[0.512,2.69,-1.352],[0.785,2.282,-1.305],[0.9,2.334,-1.783],[1.379,2.417,-1.835],[1.487,2.801,-2.132],[1.599,2.457,-2.467],[1.208,2.17,-2.379],[0.908,2.56,-2.45],[1.157,2.662,-2.865],[0.993,2.218,-3.014],[0.518,2.344,-2.977],[0.649,2.758,-3.22],[0.839,2.6,-3.654],[0.42,2.655,-3.919],[0.066,2.998,-3.836],[0.254,3.107,-3.395],[0.714,3.172,-3.563],[0.615,3.613,-3.367],[0.794,3.592,-2.912],[0.939,4.058,-2.826],[1.062,3.906,-2.372],[1.316,4.179,-2.047],[1.734,3.956,-1.909],[1.959,3.832,-1.488],[2.072,3.352,-1.479],[1.949,2.872,-1.471],[1.464,2.78,-1.415],[1.082,3.076,-1.534],[0.863,3.325,-1.162],[0.493,3.559,-1.391],[0.242,3.596,-1.816],[-0.077,3.917,-2.017],[-0.482,3.668,-2.143],[-0.62,3.367,-1.776],[-0.784,2.899,-1.752],[-1.169,2.937,-2.063],[-1.145,3.308,-2.392],[-1.244,3.074,-2.818],[-0.853,3.057,-3.124],[-1.161,3.061,-3.508],[-1.045,3.544,-3.507],[-0.672,3.661,-3.2],[-0.247,3.851,-3.367],[0.147,3.962,-3.085],[0.229,3.76,-2.639],[0.571,3.947,-2.337],[0.746,3.599,-2.029],[0.997,3.763,-1.636],[1.405,3.508,-1.525],[1.624,3.449,-1.087],[1.798,3.057,-0.845]];
 
 // ═══════════════════════════ ATOM PROPERTIES ═══════════════════════════════
-const ACOL = {S:0xeecc00, O:0xee3333, N:0x3377ff, C:0xaab0cc, H:0xcccccc};
-const ARAD = {S:0.28, O:0.24, N:0.24, C:0.22, H:0.12};
-const AEMI = {S:0.7,  O:0.55, N:0.45, C:0.2,  H:0.1};
+const ACOL = {S:0xeecc00, O:0xee3333, N:0x3377ff, C:0xaab0cc, H:0xdddddd};
+// CPK-scaled radii (Å → scene units, ~0.3 scale): S=1.80→0.54, O=1.52→0.46, N=1.55→0.47, C=1.70→0.51, H=1.20→0.36
+// Divided by ~2.2 to keep scene readable: S=0.245, O=0.208, N=0.213, C=0.232, H=0.163
+const ARAD = {S:0.245, O:0.208, N:0.213, C:0.232, H:0.163};
+const AEMI = {S:0.7,  O:0.55, N:0.45, C:0.2,  H:0.08};
 
 // β-lactam bicyclic core atom indices (verified from bond topology):
 // S4(0), N1-bridgehead(6), C5(8), C3-thiazolidine(9), C2(10), C6(11), C7-carbonyl(12), 2-carboxylate C=O(15)
@@ -574,14 +589,14 @@ const core = new THREE.PointLight(0xff2244, 2.0, 45); core.position.set(0,0,0); 
   ];
   const curve = new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.5);
   // Outer wall
-  const tg = new THREE.TubeGeometry(curve,140,26,28,false);
+  const tg = new THREE.TubeGeometry(curve,140,42,28,false);
   const tm = new THREE.MeshStandardMaterial({
     color:0x7a0010, emissive:0x2e0005, emissiveIntensity:0.7,
     roughness:0.88, metalness:0.04, side:THREE.BackSide
   });
   scene.add(new THREE.Mesh(tg,tm));
   // Inner translucent
-  const ig = new THREE.TubeGeometry(curve,100,25,22,false);
+  const ig = new THREE.TubeGeometry(curve,100,40,22,false);
   const im = new THREE.MeshStandardMaterial({
     color:0xbb1122, emissive:0x440008, emissiveIntensity:0.5,
     roughness:0.95, side:THREE.BackSide, transparent:true, opacity:0.28
@@ -593,7 +608,7 @@ const core = new THREE.PointLight(0xff2244, 2.0, 45); core.position.set(0,0,0); 
     const vpts=[];
     for(let t=0;t<=1;t+=0.04){
       const p=curve.getPoint(t);
-      const r=25.8;
+      const r=41.5;
       vpts.push(new THREE.Vector3(p.x+r*Math.cos(ang+t*1.5),p.y+r*Math.sin(ang+t*0.9),p.z));
     }
     const vg=new THREE.BufferGeometry().setFromPoints(vpts);
@@ -602,7 +617,7 @@ const core = new THREE.PointLight(0xff2244, 2.0, 45); core.position.set(0,0,0); 
 })();
 
 // ═══════════════════════════ RED BLOOD CELLS ═══════════════════════════════
-const rbcGroup = new THREE.Group(); scene.add(rbcGroup);
+const rbcGroup = new THREE.Group(); rbcGroup.visible=false; scene.add(rbcGroup);
 function makeRBC(x,y,z,rx,ry,rz,s){
   // Biconcave disc via custom geometry
   const pts=[];
@@ -738,21 +753,16 @@ PEN_BONDS.forEach(([a,b,o])=>{
   const pa=[PEN_ATOMS[a].x,PEN_ATOMS[a].y,PEN_ATOMS[a].z];
   const pb=[PEN_ATOMS[b].x,PEN_ATOMS[b].y,PEN_ATOMS[b].z];
   const isBeta=BETA_ATOMS.has(a)&&BETA_ATOMS.has(b);
+  // Bond radii proportional to CPK atom sizes; H-bonds thinner
+  const hasH = PEN_ATOMS[a].s==='H'||PEN_ATOMS[b].s==='H';
   const col = isBeta ? 0x228844 : (PEN_ATOMS[a].s==='C'&&PEN_ATOMS[b].s==='C' ? 0x3a4466 : 0x445588);
-  makeBond(pa,pb,col, isBeta?0.10:0.07, o);
+  makeBond(pa,pb,col, hasH?0.045 : (isBeta?0.088:0.072), o);
 });
 
 
 
 // blRing stub (ring removed)
 const blRing = { material: { color: { setHex: function(){} }, opacity: 0 }, rotation: { y: 0 } };
-
-// VdW surface
-const surfMesh = new THREE.Mesh(
-  new THREE.SphereGeometry(6.5,32,26),
-  new THREE.MeshStandardMaterial({color:0x44aa77,emissive:0x001122,roughness:0.9,transparent:true,opacity:0.09,side:THREE.DoubleSide})
-);
-surfMesh.visible=false; molGroup.add(surfMesh);
 
 // Labels
 const lblGroup=new THREE.Group(); lblGroup.visible=false; molGroup.add(lblGroup);
@@ -779,47 +789,127 @@ function makeLbl(txt,pos){
 });
 
 // ═══════════════════════════ PBP-2X PROTEIN (from 1PMD) ════════════════════
-const pbpGroup=new THREE.Group(); pbpGroup.visible=false; pbpGroup.position.set(PBP_ALIGN.x + 18, PBP_ALIGN.y, PBP_ALIGN.z); sceneGroup.add(pbpGroup);
+const pbpGroup=new THREE.Group(); pbpGroup.visible=false;
+pbpGroup.position.set(PBP_ALIGN.x + 18, PBP_ALIGN.y, PBP_ALIGN.z + (-22));
+pbpGroup.rotation.y = 0.5;
+sceneGroup.add(pbpGroup);
 
-// Render CA trace as smooth ribbon tube — built around local origin (pbpGroup.position handles world X)
-const pbpPts = PBP_CA.map(p=>new THREE.Vector3(p[0],p[1]+1,p[2]+2));
+// Scale PBP Cα coordinates up by 3.5× so the protein is realistically larger
+// than the penicillin molecule (PBP domain ~50Å, penicillin ~15Å → ratio ~3.3×).
+// The Y/Z offset centres the binding cleft (Ser370 region) near the origin.
+const PBP_SCALE = 3.5;
+const pbpPts = PBP_CA.map(p=>new THREE.Vector3(
+  p[0]*PBP_SCALE,
+  p[1]*PBP_SCALE + 1.0,
+  p[2]*PBP_SCALE + 3.5
+));
 const pbpCurve = new THREE.CatmullRomCurve3(pbpPts,false,'catmullrom',0.5);
+const totalPts = pbpPts.length;
 
-// Colour by position along chain (N→C: blue→red)
-const pbpTubeSegs=500, pbpRad=12;
-const pbpTube=new THREE.TubeGeometry(pbpCurve,pbpTubeSegs,0.18,8,false);
-// Vertex colour gradient
+// ── Layer 1: Core backbone tube — thin, semi-transparent ──────────────────
+const pbpTubeSegs=500;
+const pbpTube=new THREE.TubeGeometry(pbpCurve,pbpTubeSegs,0.28,7,false);
+// Vertex colour gradient N→C: deep blue → purple → rose red
 const posAttr=pbpTube.attributes.position;
 const colArr=new Float32Array(posAttr.count*3);
 for(let i=0;i<posAttr.count;i++){
   const t=i/posAttr.count;
-  const r=0.2+0.7*t, g=0.1+0.3*Math.sin(t*Math.PI), b=0.8-0.6*t;
-  colArr[i*3]=r; colArr[i*3+1]=g; colArr[i*3+2]=b;
+  colArr[i*3  ]=0.15+0.70*t;
+  colArr[i*3+1]=0.35-0.15*Math.sin(t*Math.PI);
+  colArr[i*3+2]=0.90-0.45*t;
 }
 pbpTube.setAttribute('color',new THREE.BufferAttribute(colArr,3));
 const pbpMat=new THREE.MeshStandardMaterial({
-  vertexColors:true,emissiveIntensity:0.2,
-  roughness:0.55,metalness:0.1,transparent:true,opacity:0.32
+  vertexColors:true, emissiveIntensity:0.25,
+  roughness:0.50, metalness:0.12, transparent:true, opacity:0.38
 });
-pbpMat.emissive=new THREE.Color(0x220044);
+pbpMat.emissive=new THREE.Color(0x1a0033);
 pbpGroup.add(new THREE.Mesh(pbpTube,pbpMat));
 
+// ── Layer 2: Secondary-structure tubes — helices thicker & brighter ────────
+(function addSecondaryStructure(){
+  const n = pbpPts.length;
+  const isHelix = new Array(n).fill(false);
+  for(let i=2; i<n-2; i++){
+    const d4 = i+4 < n ? pbpPts[i].distanceTo(pbpPts[i+4]) : 999;
+    // Helix Cα–Cα+4 ≈ 5–6Å → at 3.5× scale ≈ 1.75–2.1 units
+    if(d4 > 1.2 && d4 < 2.5) isHelix[i]=true;
+  }
+  let start=-1;
+  for(let i=0; i<=n; i++){
+    if(i<n && isHelix[i]){ if(start<0) start=i; }
+    else {
+      if(start>=0 && (i-start)>=4){
+        const segPts = pbpPts.slice(start, Math.min(i+1,n));
+        if(segPts.length>=2){
+          const segCurve = new THREE.CatmullRomCurve3(segPts,false,'catmullrom',0.5);
+          const segs = Math.max(8, segPts.length*3);
+          const hTube = new THREE.TubeGeometry(segCurve, segs, 0.62, 8, false);
+          const t_mid = (start + (i-start)/2)/n;
+          const hr=0.6+0.3*t_mid, hg=0.1+0.2*t_mid, hb=0.8-0.3*t_mid;
+          const hMat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(hr,hg,hb),
+            emissive: new THREE.Color(hr*0.4, hg*0.2, hb*0.4),
+            emissiveIntensity: 0.35, roughness:0.45, metalness:0.15,
+            transparent:true, opacity:0.65
+          });
+          pbpGroup.add(new THREE.Mesh(hTube, hMat));
+        }
+      }
+      start=-1;
+    }
+  }
+
+  // β-sheet strands
+  const isSheet = new Array(n).fill(false);
+  for(let i=2; i<n-2; i++){
+    const d1 = i+1<n ? pbpPts[i].distanceTo(pbpPts[i+1]) : 0;
+    // Extended chain Cα–Cα+1 ≈ 3.8Å → at 3.5× ≈ 1.05–1.6 units
+    if(d1 > 0.9 && d1 < 1.65 && !isHelix[i]) isSheet[i]=true;
+  }
+  start=-1;
+  for(let i=0; i<=n; i++){
+    if(i<n && isSheet[i]){ if(start<0) start=i; }
+    else {
+      if(start>=0 && (i-start)>=3){
+        const segPts = pbpPts.slice(start, Math.min(i+1,n));
+        if(segPts.length>=2){
+          const segCurve = new THREE.CatmullRomCurve3(segPts,false,'catmullrom',0.5);
+          const segs = Math.max(6, segPts.length*2);
+          const sTube = new THREE.TubeGeometry(segCurve, segs, 0.38, 5, false);
+          const t_mid = (start + (i-start)/2)/n;
+          const sMat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(0.1+0.5*t_mid, 0.65, 0.35+0.3*t_mid),
+            emissive: new THREE.Color(0.0, 0.18, 0.10),
+            emissiveIntensity:0.3, roughness:0.55, metalness:0.1,
+            transparent:true, opacity:0.55
+          });
+          pbpGroup.add(new THREE.Mesh(sTube, sMat));
+        }
+      }
+      start=-1;
+    }
+  }
+})();
+
 // ── Active-site pocket — glowing cavity so binding spot is clearly visible ──
-// Centroid of the four key residues
-const activeSitePos = new THREE.Vector3(-2.1, 0.75, 2.3);
+// Ser370 region in scaled+offset coords: ~(-6.3, 1.4, 9.8)
+// But at pbpX=0 the pbpGroup is offset by PBP_ALIGN so penicillin C7 meets Ser370.
+// Active site centroid in pbpGroup local space (matches KEY_RES Ser370 pos):
+const activeSitePos = new THREE.Vector3(-6.3, 1.4, 9.8);
 
 // Outer soft glow shell
 const pocketGlowMat = new THREE.MeshBasicMaterial({
   color:0xffaa00, transparent:true, opacity:0.06, side:THREE.BackSide, depthWrite:false
 });
 pbpGroup.add((()=>{
-  const m=new THREE.Mesh(new THREE.SphereGeometry(1.4,24,18),pocketGlowMat);
+  const m=new THREE.Mesh(new THREE.SphereGeometry(2.2,24,18),pocketGlowMat);
   m.position.copy(activeSitePos); return m;
 })());
 
 // Mid glow ring (pulsing torus around pocket entrance)
 const pocketRingMat = new THREE.MeshBasicMaterial({color:0xffcc44,transparent:true,opacity:0.5});
-const pocketRing = new THREE.Mesh(new THREE.TorusGeometry(0.9,0.04,8,48),pocketRingMat);
+const pocketRing = new THREE.Mesh(new THREE.TorusGeometry(1.2,0.06,8,48),pocketRingMat);
 pocketRing.position.copy(activeSitePos);
 pocketRing.rotation.x=Math.PI/3; pocketRing.rotation.z=Math.PI/6;
 pocketRing.userData.isPocketRing=true;
@@ -827,7 +917,7 @@ pbpGroup.add(pocketRing);
 
 // Inner core indicator
 const pocketCoreMat = new THREE.MeshBasicMaterial({color:0xffee88,transparent:true,opacity:0.0});
-const pocketCore = new THREE.Mesh(new THREE.SphereGeometry(0.14,16,12),pocketCoreMat);
+const pocketCore = new THREE.Mesh(new THREE.SphereGeometry(0.22,16,12),pocketCoreMat);
 pocketCore.position.copy(activeSitePos);
 pocketCore.userData.isPocketCore=true;
 pbpGroup.add(pocketCore);
@@ -844,21 +934,22 @@ asCtx.fillStyle='#ffcc44'; asCtx.font='bold 15px monospace';
 asCtx.textAlign='center'; asCtx.textBaseline='middle';
 asCtx.fillText('⬡ ACTIVE SITE', 128, 22);
 asCtx.fillStyle='rgba(255,210,120,0.65)'; asCtx.font='10px monospace';
-asCtx.fillText('Ser370 · Lys373 · Thr394', 128, 44);
+asCtx.fillText('Ser370 · Lys373 · Thr394 · Trp392', 128, 44);
 const asLabel = new THREE.Mesh(
-  new THREE.PlaneGeometry(1.8,0.44),
+  new THREE.PlaneGeometry(3.2,0.80),
   new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(asCv),transparent:true,depthWrite:false,side:THREE.DoubleSide})
 );
-asLabel.position.copy(activeSitePos); asLabel.position.y += 1.4;
+asLabel.position.copy(activeSitePos); asLabel.position.y += 2.2;
 asLabel.userData.isActiveSiteLabel=true;
 pbpGroup.add(asLabel);
 
-// Key residue markers (Ser, Lys, Thr near active site) — local coords (no +8)
+// Key residue markers — positions in pbpGroup local space at 3.5× scale
+// Ser370 Oγ is the nucleophile; Lys373 Nζ 2.7Å away; Thr394 Oγ below; Trp392 stabilises
 const KEY_RES=[
-  {pos:[-1.8, 0.1,1.8], col:0xffaa00, r:0.32, lbl:'Ser370 Oγ — Nucleophile attacks β-lactam C7'},
-  {pos:[-2.5, 1.8,2.8], col:0x00ddff, r:0.22, lbl:'Lys373 Nζ — Activates Ser via proton transfer'},
-  {pos:[-2.2,-1.8,2.2], col:0x00ff88, r:0.22, lbl:'Thr394 Oγ — H-bonds to carboxylate O⁻'},
-  {pos:[-3.1, 2.8,3.4], col:0xff44aa, r:0.20, lbl:'Glu166 — Stabilises catalytic Lys373'},
+  {pos:[-6.300,  1.400,  9.800], col:0xffaa00, r:0.28, lbl:'Ser370 Oγ — Nucleophile attacks β-lactam C7'},
+  {pos:[-9.714, -0.263, 10.192], col:0x00ddff, r:0.20, lbl:'Lys373 Nζ — Activates Ser via proton transfer'},
+  {pos:[-9.298,  0.781,  9.274], col:0x00ff88, r:0.20, lbl:'Thr394 Oγ — H-bonds to carboxylate O⁻'},
+  {pos:[-7.800,  1.000, 10.500], col:0xff44aa, r:0.18, lbl:'Trp392 — Stabilises oxyanion hole geometry'},
 ];
 KEY_RES.forEach(({pos,col,lbl,r},ki)=>{
   // Main residue sphere — Ser370 is larger and brighter
@@ -868,13 +959,13 @@ KEY_RES.forEach(({pos,col,lbl,r},ki)=>{
   m.position.fromArray(pos); m.userData={lbl}; pbpGroup.add(m);
 
   // Glow ring — tighter, proportional to sphere
-  const tr=new THREE.Mesh(new THREE.TorusGeometry(r*1.9,0.03,6,22),
+  const tr=new THREE.Mesh(new THREE.TorusGeometry(r*1.9,0.04,6,22),
     new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:isSer?0.7:0.4}));
   tr.position.fromArray(pos); pbpGroup.add(tr);
 
   // Ser370 gets an extra outer pulse ring to draw the eye
   if(isSer){
-    const tr2=new THREE.Mesh(new THREE.TorusGeometry(r*3.2,0.025,6,28),
+    const tr2=new THREE.Mesh(new THREE.TorusGeometry(r*3.2,0.03,6,28),
       new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.35}));
     tr2.position.fromArray(pos); tr2.userData.isPocketRing=true; pbpGroup.add(tr2);
   }
@@ -916,14 +1007,14 @@ KEY_RES.forEach(({pos,col,lbl,r},ki)=>{
     map: new THREE.CanvasTexture(lblCv),
     transparent: true, opacity: 0.95, depthWrite: false
   }));
-  lblSprite.scale.set(2.2, 0.50, 1);
-  lblSprite.position.set(pos[0]+1.4, pos[1]+0.75, pos[2]);
+  lblSprite.scale.set(3.5, 0.80, 1);
+  lblSprite.position.set(pos[0]+2.2, pos[1]+1.1, pos[2]);
   pbpGroup.add(lblSprite);
 
   // Thin leader line from sphere edge to label
   const lineGeo = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(pos[0], pos[1], pos[2]),
-    new THREE.Vector3(pos[0]+1.2, pos[1]+0.6, pos[2])
+    new THREE.Vector3(pos[0]+2.0, pos[1]+1.0, pos[2])
   ]);
   const lineMat = new THREE.LineBasicMaterial({color:col, transparent:true, opacity:0.5});
   pbpGroup.add(new THREE.Line(lineGeo, lineMat));
@@ -940,10 +1031,10 @@ const hbGroup=new THREE.Group(); hbGroup.visible=false; sceneGroup.add(hbGroup);
 //  idx 3  = O3(COO⁻)  → H-bond to Thr394
 //  idx 12 = C7        → covalent attack by Ser370
 const BOND_DEFS = [
-  { atomIdx:1,  res:[-1.8, 0.1, 1.8],  col:0x00ffee, colHex:'#00ffee', label:'Ser370\nOxyanion hole 2.6Å', type:'hbond' },
-  { atomIdx:2,  res:[-2.5, 1.8, 2.8],  col:0xffcc00, colHex:'#ffcc00', label:'Lys373\nElectrostatic 2.7Å', type:'elec'  },
-  { atomIdx:3,  res:[-2.2,-1.8, 2.2],  col:0x44ff88, colHex:'#44ff88', label:'Thr394\nH-bond 2.8Å',        type:'hbond' },
-  { atomIdx:12, res:[-1.8, 0.1, 1.8],  col:0xff8800, colHex:'#ff8800', label:'Ser370\nCovalent attack C7', type:'coval' },
+  { atomIdx:1,  res:[-6.259, 1.853, 10.921], col:0x00ffee, colHex:'#00ffee', label:'Ser370\nOxyanion hole 2.6Å', type:'hbond' },
+  { atomIdx:2,  res:[-9.714,-0.263, 10.192], col:0xffcc00, colHex:'#ffcc00', label:'Lys373\nElectrostatic 2.7Å', type:'elec'  },
+  { atomIdx:3,  res:[-9.298, 0.781,  9.274], col:0x44ff88, colHex:'#44ff88', label:'Thr394\nH-bond 2.8Å',        type:'hbond' },
+  { atomIdx:12, res:[-6.300, 1.400,  9.800], col:0xff8800, colHex:'#ff8800', label:'Ser370\nCovalent attack C7', type:'coval' },
 ];
 
 // Per-bond traveling pulse objects
@@ -1396,33 +1487,39 @@ let degradeAnimating=false;
 // ═══════════════════════════ STAGE DEFINITIONS ═════════════════════════════
 // PBP approaches along +X from the right. Penicillin stays at origin.
 const STAGES=[
-  {title:'Penicillin in the Bloodstream',
-   desc:'Penicillin travels through the bloodstream with a strained β-lactam ring (4-membered) fused to a thiazolidine ring (5-membered). This ring strain is what makes penicillin reactive. Green atoms = β-lactam/thiazolidine core.',
-   b:0,a:0,i:0, pbp:false,hb:false, pbpX:18},
-  {title:'Approaching the PBP Active Site',
-   desc:'Penicillin drifts toward PBP (Penicillin-Binding Protein) on the bacterial surface. The negatively charged carboxylate group (–COO⁻) is electrically attracted to positively charged residues like Lysine and Arginine inside the active site.',
-   b:28,a:22,i:8, pbp:true,hb:false, pbpX:10},
-  {title:'Docking — Hydrogen Bonds Form',
-   desc:'Penicillin settles into the active site. Hydrogen bonds form between penicillin and residues like Serine, Lysine, Threonine, and Asparagine. These bonds orient the β-lactam ring directly toward the key Serine residue, ready for the next step.',
-   b:58,a:62,i:38, pbp:true,hb:true, pbpX:5},
-  {title:'β-Lactam Ring Opens — Serine Attacks',
-   desc:'The Serine oxygen (Ser–OH) attacks the carbonyl carbon of the β-lactam ring. The N–C bond breaks and the ring opens. Reaction: Ser–OH + β-lactam → Ser–O–C(=O)–Penicillin + H⁺. This forms a covalent acyl-enzyme bond. IRREVERSIBLE.',
-   b:82,a:86,i:74, pbp:true,hb:true, pbpX:2},
-  {title:'Acyl-Enzyme Complex — PBP Blocked',
-   desc:'Penicillin is now permanently bonded to the Serine residue: Ser–O–C(=O)–Penicillin. The active site is completely blocked. PBP can no longer do its job — crosslinking the bacterial cell wall — so the wall cannot be repaired or rebuilt.',
-   b:99,a:98,i:99, pbp:true,hb:true, pbpX:0},
-  {title:'Cell Wall Synthesis Halted',
-   desc:'The peptidoglycan mesh (shown in green) is the rigid scaffold that gives the bacterial cell wall its strength. PBP normally crosslinks the strands of this mesh. With PBP blocked, no new crosslinks can form. The wall starts to weaken.',
-   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0},
-  {title:'Cell Wall Breaks Down',
-   desc:'The bacteria\'s own enzymes (autolysins) keep cutting old wall strands, but PBP can no longer replace them. The crosslinks snap. The wall develops structural gaps. Bacteria maintain high internal pressure (~5 atm) — the wall is now too weak to hold it.',
-   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0},
-  {title:'Osmotic Lysis — Cell Swells',
-   desc:'Without the rigid wall for support, the bacterial membrane bulges outward under the internal pressure. Water rushes in by osmosis. The cell swells rapidly. This is called lysis — the membrane is about to rupture.',
-   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0},
-  {title:'Cell Death — Bacteriolysis Complete',
-   desc:'The bacterial cell bursts. DNA, ribosomes, and enzymes spill out. The cell is dead. This is why penicillin is bactericidal (it kills bacteria) rather than just bacteriostatic (slowing growth). The immune system clears the debris.',
-   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0},
+  // Stage 0: Free drug — PBP hidden, far away
+  {title:'① Molecular Architecture — Penicillin V',
+   desc:'Introduction to Penicillin V and its bicyclic core. The high ring strain of the 4-membered β-lactam ring makes it a reactive . This strain is key to its mechanism of action. Green atoms = β-lactam/thiazolidine core.',
+   b:0,a:0,i:0, pbp:false,hb:false, pbpX:18, pbpZ:-22, pbpRY: 0.5},
+  // Stage 1: Approach — PBP swings in from upper-right, cleft rotating to face C7
+  {title:'② Electrostatic Attraction',
+   desc:'The negatively charged carboxylate group (–COO⁻) of Penicillin V is drawn toward positively charged Lysine and Arginine residues inside the PBP active site pocket. This electrostatic attraction guides the drug toward its target.',
+   b:28,a:22,i:8, pbp:true,hb:false, pbpX:10, pbpZ:-14, pbpRY: 0.32},
+  // Stage 2: Docking — PBP close, cleft mouth aligned toward C7
+  {title:'③ Docking — Orientation Lock',
+   desc:'Hydrogen bonds form between Penicillin V and residues like Serine, Lysine, Threonine, and Asparagine. These bonds act as an "Orientation Lock", perfectly aligning the β-lactam ring directly toward the key Serine residue for nucleophilic attack.',
+   b:58,a:62,i:38, pbp:true,hb:true, pbpX:4, pbpZ:-6, pbpRY: 0.12},
+  // Stage 3: Ring opens — PBP snugged in, Ser370 at attack distance
+  {title:'④ Ring Opens — The Attack',
+   desc:'The Serine residue (Ser–OH) attacks the β-lactam ring, causing it to open and release stored ring strain energy. Reaction: Ser–OH + β-lactam → Ser–O–C(=O)–Penicillin + H⁺. This forms a covalent acyl-enzyme bond. IRREVERSIBLE.',
+   b:82,a:86,i:74, pbp:true,hb:true, pbpX:1.5, pbpZ:-2.5, pbpRY: 0.04},
+  // Stage 4: Acyl bond — Ser370 at exact C7 contact, protein bulk BEHIND penicillin (+Z)
+  {title:'⑤ Acyl Bond — The Permanent Lock',
+   desc:'A permanent Covalent Ester Bond is formed between Penicillin V and the Serine residue: Ser–O–C(=O)–Penicillin. This creates the Acyl-Enzyme Complex, irreversibly deactivating PBP. The active site is completely and permanently blocked.',
+   b:99,a:98,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY: 0.0},
+  // Stages 5-8: bacteria scenes
+  {title:'⑥ System Blockage — Wall Synthesis Blockage',
+   desc:'The inhibited PBP can no longer perform cross-linking of the peptidoglycan mesh (shown in green), halting bacterial cell wall construction. With no new crosslinks forming, the wall begins to structurally weaken and degrade.',
+   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY:0.0},
+  {title:'⑦ Structural Failure — Wall Breaks Down',
+   desc:'The final collapse of the wall lattice begins. The bacteria\'s own enzymes (autolysins) keep cutting old wall strands, but PBP can no longer replace them. The integrity of the bacterial cell is lost as it fails to hold its internal pressure (~5 atm).',
+   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY:0.0},
+  {title:'⑧ Osmotic Lysis — The Swelling',
+   desc:'Without a rigid cell wall for support, Water rushes in by osmosis, causing the cell to swell rapidly. The membrane is close to rupture.',
+   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY:0.0},
+  {title:'⑨ Bacteriolysis Complete — Cell Death',
+   desc:'The bacterial cell membrane ruptures, releasing all cellular contents — DNA, ribosomes, and enzymes — into the bloodstream. This confirms the Bactericidal effect of Penicillin V: it kills bacteria, not merely slows their growth.',
+   b:99,a:99,i:99, pbp:true,hb:true, pbpX:0, pbpZ:0, pbpRY:0.0},
 ];
 let curStage=0;
 
@@ -1552,11 +1649,22 @@ function goStage(n){
   if(s.hb&&!hbGroup.visible){ hbGroup.visible=true; state.hb=true; var eh=document.getElementById('b-hb'); if(eh)eh.classList.add('on'); }
   if(!s.hb&&hbGroup.visible){ hbGroup.visible=false; state.hb=false; var eh=document.getElementById('b-hb'); if(eh)eh.classList.remove('on'); }
 
-  // PBP slide animation — uses tween system so it works in VR (XR loop)
+  // PBP approach animation — animate X (lateral), Z (depth), and Y-rotation (cleft orientation)
   var fromX=pbpGroup.position.x, toX=PBP_ALIGN.x + s.pbpX;
-  addTween({ duration:600,
-    onUpdate:function(p){ pbpGroup.position.x=fromX+(toX-fromX)*p; },
-    onComplete:function(){ pbpGroup.position.x=toX; rebuildHBonds(toX); }
+  var fromZ=pbpGroup.position.z, toZ=PBP_ALIGN.z + s.pbpZ;
+  var fromRY=pbpGroup.rotation.y, toRY=s.pbpRY;
+  addTween({ duration:700,
+    onUpdate:function(p){
+      pbpGroup.position.x=fromX+(toX-fromX)*p;
+      pbpGroup.position.z=fromZ+(toZ-fromZ)*p;
+      pbpGroup.rotation.y=fromRY+(toRY-fromRY)*p;
+    },
+    onComplete:function(){
+      pbpGroup.position.x=toX;
+      pbpGroup.position.z=toZ;
+      pbpGroup.rotation.y=toRY;
+      rebuildHBonds(toX);
+    }
   });
 
   // ── Stage-specific effects ──────────────────────────────────────────────
@@ -1601,10 +1709,10 @@ function goStage(n){
     blRing.material.color.setHex(0xff2200); blRing.material.opacity=1.0;
     atomMeshes.forEach(m=>{ if(m.userData.isBeta){m.material.color.setHex(0xff2200);m.material.emissive.setHex(0xff2200);m.material.emissiveIntensity=1.2;} });
 
-    // Ser370 residue world position (in pbpGroup local space: [-1.8, 0.1, 1.8] + pbpGroup.position.x offset)
+    // Ser370 residue world position (in pbpGroup local space: SER370_LOCAL = [-6.3, 1.4, 9.8])
     // We resolve it dynamically so it works at any pbpX
     function getSerWorldPos(){
-      var wp=new THREE.Vector3(-1.8,0.1,1.8);
+      var wp=SER370_LOCAL.clone();
       pbpGroup.localToWorld(wp);
       return wp;
     }
@@ -1907,14 +2015,14 @@ function goStage(n){
 
 
 // ═══════════════════════════ TOGGLE CONTROLS ═══════════════════════════════
-const state={rot:true,pbp:false,hb:false,sur:false,rbc:true,lbl:false};
+const state={rot:true,pbp:false,hb:false,bnd:true,rbc:false,lbl:false};
 function tog(k){
   state[k]=!state[k];
   var el=document.getElementById('b-'+k);
   if(el) el.classList.toggle('on',state[k]);
   if(k==='pbp') pbpGroup.visible=state.pbp;
   if(k==='hb')  hbGroup.visible=state.hb;
-  if(k==='sur') surfMesh.visible=state.sur;
+  if(k==='bnd') bondGroup.visible=state.bnd;
   if(k==='rbc') rbcGroup.visible=state.rbc;
   if(k==='lbl') lblGroup.visible=state.lbl;
 }
@@ -1989,7 +2097,7 @@ const vrMenu = (function(){
     {label:'⟳ Auto Rotate',   key:'rot'},
     {label:'◈ PBP-2X Protein', key:'pbp'},
     {label:'⬡ H-Bond Network', key:'hb'},
-    {label:'◉ VdW Surface',    key:'sur'},
+    {label:'― Show Bonds',      key:'bnd'},
     {label:'◌ Blood Cells',    key:'rbc'},
     {label:'⊞ Atom Labels',    key:'lbl'},
   ];
@@ -2250,13 +2358,15 @@ async function enterVR(){
     if(bRotBtn) bRotBtn.classList.remove('on');
     vrPanel.draw('Welcome to Bloodstream VR',
       'Point your controller at any atom and pull the trigger to inspect it. Hold grip and move hand to rotate the molecule. You are inside a blood vessel.');
-    vrPanel.mesh.position.set(0,1.2,14);
+    // xrRig is at z=8, facing toward z=0 (the molecule).
+    // Place panels in FRONT of the player (lower z than rig = toward molecule).
+    vrPanel.mesh.position.set(2.2, 1.4, 4);
     vrPanel.mesh.visible = true;
-    // Position and show VR interactions menu
+    // Position and show VR interactions menu — to the left of centre, in front of player
     vrMenu.draw();
-    vrMenu.mesh.position.set(-1.6, 1.2, 14);
+    vrMenu.mesh.position.set(-2.2, 1.4, 4);
     vrMenu.mesh.visible = true;
-    vrMenuToggleMesh.position.set(-1.6, 1.2 + vrMenu.MH/2 + 0.14, 14);
+    vrMenuToggleMesh.position.set(-2.2, 1.4 + vrMenu.MH/2 + 0.14, 4);
     vrMenuToggleMesh.visible = true;
     vrMenuVisible = true;
     s.addEventListener('end', function(){
