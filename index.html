@@ -169,7 +169,6 @@ body{background:#08000f;overflow:hidden;font-family:'Share Tech Mono',monospace;
     <button class="cb on" id="b-rot" onclick="tog('rot')">⟳ Auto Rotate</button>
     <button class="cb" id="b-pbp" onclick="tog('pbp')">◈ PBP-2X Protein</button>
     <button class="cb" id="b-hb"  onclick="tog('hb')">⬡ H-Bond Network</button>
-    <button class="cb on" id="b-bnd" onclick="tog('bnd')">― Show Bonds</button>
     <button class="cb" id="b-rbc" onclick="tog('rbc')">◌ Blood Cells</button>
     <button class="cb" id="b-lbl" onclick="tog('lbl')">⊞ Atom Labels</button>
     <div class="dv"></div>
@@ -513,8 +512,7 @@ for(var ci=0; ci<2; ci++){
       if(hits.length && hits[0].object.userData.lbl){
         var obj = hits[0].object;
         var sym = obj.userData.sym || '';
-        var idx2 = obj.userData.idx !== undefined ? ' #'+(obj.userData.idx+1) : '';
-        vrPanel.draw(sym+idx2, obj.userData.lbl);
+        vrPanel.draw(sym, obj.userData.lbl);
         vrPanel.mesh.position.copy(hits[0].point).add(new THREE.Vector3(0,1.8,0));
         vrPanel.mesh.lookAt(renderer.xr.getCamera(camera).getWorldPosition(new THREE.Vector3()));
         vrPanel.mesh.visible = true;
@@ -721,7 +719,7 @@ PEN_ATOMS.forEach(at=>{
   });
   const mesh = new THREE.Mesh(geo,mat);
   mesh.position.set(at.x,at.y,at.z);
-  const iupac = IUPAC_NAMES[at.i] || {name:`${at.i+1}  ${at.s}`, interaction:null};
+  const iupac = IUPAC_NAMES[at.i] || {name:`${at.s}`, interaction:null};
   mesh.userData = {idx:at.i, sym:at.s, origEmi:emi, origScale:1.0,
     isBeta: BETA_ATOMS.has(at.i),
     iupacName: iupac.name,
@@ -731,6 +729,10 @@ PEN_ATOMS.forEach(at=>{
   atomMeshes.push(mesh);
   mesh.castShadow=true;
 });
+
+
+
+
 
 // Build bonds
 function makeBond(pa,pb,col,r=0.12,order=1){
@@ -753,13 +755,10 @@ PEN_BONDS.forEach(([a,b,o])=>{
   const pa=[PEN_ATOMS[a].x,PEN_ATOMS[a].y,PEN_ATOMS[a].z];
   const pb=[PEN_ATOMS[b].x,PEN_ATOMS[b].y,PEN_ATOMS[b].z];
   const isBeta=BETA_ATOMS.has(a)&&BETA_ATOMS.has(b);
-  // Bond radii proportional to CPK atom sizes; H-bonds thinner
   const hasH = PEN_ATOMS[a].s==='H'||PEN_ATOMS[b].s==='H';
   const col = isBeta ? 0x228844 : (PEN_ATOMS[a].s==='C'&&PEN_ATOMS[b].s==='C' ? 0x3a4466 : 0x445588);
   makeBond(pa,pb,col, hasH?0.045 : (isBeta?0.088:0.072), o);
 });
-
-
 
 // blRing stub (ring removed)
 const blRing = { material: { color: { setHex: function(){} }, opacity: 0 }, rotation: { y: 0 } };
@@ -1628,12 +1627,6 @@ function goStage(n){
     molGroup.userData.ringOpenObjs.forEach(o=>{ try{molGroup.remove(o);}catch(e){} });
     molGroup.userData.ringOpenObjs=[];
   }
-  // Restore hidden N–C7 bond if any
-  if(molGroup.userData.ringOpenObjs && molGroup.userData.ringOpenObjs._hiddenBond){
-    molGroup.userData.ringOpenObjs._hiddenBond.visible=true;
-    molGroup.userData.ringOpenObjs._hiddenBond=null;
-  }
-  bondGroup.children.forEach(function(bm){ bm.visible=true; });
   // Reset all atom colors to original
   atomMeshes.forEach(function(m){
     var s=m.userData.sym;
@@ -1760,28 +1753,9 @@ function goStage(n){
 
       // ── Step 2 (1400ms): N–C7 bond snaps — ring opens ──────────────────────
       setTimeout(function(){
-        // Find and hide the N1–C7 bond cylinder in bondGroup
-        // N1 is atom 6, C7 is atom 12 — bond [6,12,1] or [12,11,1] etc.
-        // We identify it by proximity: the bond whose midpoint is between N1 and C7
+        // Snap flash particles at the N–C7 break point
         var n1pos=new THREE.Vector3(); N1mesh.getWorldPosition(n1pos);
         var c7pos2=new THREE.Vector3(); C7mesh.getWorldPosition(c7pos2);
-        var targetMid=n1pos.clone().add(c7pos2).multiplyScalar(0.5);
-        var closestBond=null; var closestDist=99;
-        bondGroup.children.forEach(function(bm){
-          var bWorld=new THREE.Vector3(); bm.getWorldPosition(bWorld);
-          var d=bWorld.distanceTo(targetMid);
-          if(d<closestDist){closestDist=d;closestBond=bm;}
-        });
-        if(closestBond && closestDist<1.2){
-          // Animate bond snapping: flash red → invisible
-          closestBond.material.color.setHex(0xff0000);
-          closestBond.material.emissive=new THREE.Color(0xff2200);
-          closestBond.material.emissiveIntensity=2.0;
-          setTimeout(function(){closestBond.visible=false;},200);
-          molGroup.userData.ringOpenObjs._hiddenBond=closestBond;
-        }
-
-        // Snap flash particles at the N–C7 break point
         var breakPos=n1pos.clone().add(c7pos2).multiplyScalar(0.5);
         for(var pi=0;pi<8;pi++){
           var pGeo=new THREE.SphereGeometry(0.09+Math.random()*0.08,6,5);
@@ -1899,22 +1873,6 @@ function goStage(n){
 
   if(n===4){
     // Keep the β-lactam ring open during acyl-enzyme stage
-    var C7mesh4 = atomMeshes[12];
-    var N1mesh4 = atomMeshes[6];
-    // Hide the N1–C7 bond cylinder in bondGroup (no snap animation here)
-    var n1pos4=new THREE.Vector3(); N1mesh4.getWorldPosition(n1pos4);
-    var c7pos4=new THREE.Vector3(); C7mesh4.getWorldPosition(c7pos4);
-    var targetMid4=n1pos4.clone().add(c7pos4).multiplyScalar(0.5);
-    var closestBond4=null; var closestDist4=99;
-    bondGroup.children.forEach(function(bm){
-      var bWorld=new THREE.Vector3(); bm.getWorldPosition(bWorld);
-      var d=bWorld.distanceTo(targetMid4);
-      if(d<closestDist4){closestDist4=d;closestBond4=bm;}
-    });
-    if(closestBond4 && closestDist4<1.2){
-      closestBond4.visible=false;
-      molGroup.userData.ringOpenObjs._hiddenBond=closestBond4;
-    }
     // Color cues for the open ring / acyl-enzyme state
     blRing.material.color.setHex(0xff6600); blRing.material.opacity=0.55;
     atomMeshes.forEach(m=>{ if(m.userData.isBeta){m.material.color.setHex(0xff6600);m.material.emissive.setHex(0xff4400);m.material.emissiveIntensity=0.7;} });
@@ -2015,14 +1973,13 @@ function goStage(n){
 
 
 // ═══════════════════════════ TOGGLE CONTROLS ═══════════════════════════════
-const state={rot:true,pbp:false,hb:false,bnd:true,rbc:false,lbl:false};
+const state={rot:true,pbp:false,hb:false,rbc:false,lbl:false};
 function tog(k){
   state[k]=!state[k];
   var el=document.getElementById('b-'+k);
   if(el) el.classList.toggle('on',state[k]);
   if(k==='pbp') pbpGroup.visible=state.pbp;
   if(k==='hb')  hbGroup.visible=state.hb;
-  if(k==='bnd') bondGroup.visible=state.bnd;
   if(k==='rbc') rbcGroup.visible=state.rbc;
   if(k==='lbl') lblGroup.visible=state.lbl;
 }
@@ -2097,7 +2054,6 @@ const vrMenu = (function(){
     {label:'⟳ Auto Rotate',   key:'rot'},
     {label:'◈ PBP-2X Protein', key:'pbp'},
     {label:'⬡ H-Bond Network', key:'hb'},
-    {label:'― Show Bonds',      key:'bnd'},
     {label:'◌ Blood Cells',    key:'rbc'},
     {label:'⊞ Atom Labels',    key:'lbl'},
   ];
